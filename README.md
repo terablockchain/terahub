@@ -1,4 +1,4 @@
-﻿## Tera-Ethereum Bridge  
+﻿## Ethereum/Binance Tera-Bridge  
 
 
   
@@ -73,6 +73,6 @@ Protocol description:
 https://docs.google.com/document/d/1XJXZw186m4rBG5MGN8SHTpknPDGpPk6FjrjsbGRhLFw/edit
 
 
-Last versions links:
+Articles:
 * ENG: https://docs.google.com/document/d/1iDnN2owjOdlc1_83Wml1m7-WGhi4JCYJwRhrlga2PJQ/edit?usp=sharing
 * RUS: https://docs.google.com/document/d/1tqELNJivosx-qlFQZWqa6Qy9NI9G7tSEZ7q0500Ji0A/edit?usp=sharing
