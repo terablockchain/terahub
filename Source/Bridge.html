@@ -1,0 +1,671 @@
+<!--<script src="/file/70823524/0">TAB main-net</script>-->
+<script src="/file/7359663/0">TAB test-net</script>
+<!--<script src="/file/196/0">TAB local-net</script>-->
+
+
+<script>
+    ALL_ACCOUNTS=1;
+
+    var TESTMODE=0;
+    var glNetwork="TERA-ETH";
+    var WORK_DELTA=5;//отступ от краев внтутри разрешенного диапазона работы
+
+    var glInfo;
+    var SaveIdArr=["idMode","idFrom","idTo","idAmount","idDescription"];
+    var OrderArr=[];
+
+    window.addEventListener('Init',function ()
+    {
+        if(SMART.Num===7)
+            TESTMODE=1;
+        CheckArr();
+        LoadValues();
+        SmartGetInfo();
+        PrepareSavingItems();
+    });
+    window.addEventListener('UpdateInfo',function ()
+    {
+        CheckArr();
+        UpdateOrderList();
+    });
+
+    window.addEventListener('Event',function(e)
+    {
+        var Msg=e.detail;
+        var Data=Msg.Description;
+
+        if(Msg.Error)
+        {
+            SetError(Data);
+        }
+        else
+        if(Data.From===idFrom.value)
+        {
+            if(Data.cmd==="AddOrder" && !TESTMODE)
+                ClearSend();
+        }
+        var Str;
+        if(typeof Data==="object")
+            Str=JSON.stringify(Data,"",4)
+        else
+            Str=Data;
+        idLogs.value=Str+"\n-------\n"+idLogs.value;
+    });
+
+    function CheckArr()
+    {
+        var bOwner=0;
+        var Arr=[];
+        for(var i=0;i<USER_ACCOUNT.length;i++)
+        {
+            var Item=USER_ACCOUNT[i];
+            if(SMART.Owner===Item.Num)
+                bOwner=1;
+
+            if(Item.Currency!==0)//todo
+                continue;
+            if(SMART.Num!==Item.Value.Smart)
+                continue;
+
+            var Value={value:Item.Num, text:Item.Num+"."+Item.Name+"  "+SUM_TO_STRING(Item.Value,Item.Currency,1)};
+            Arr.push(Value);
+        }
+
+        SetVisibleBlock("mOwner",bOwner);
+
+        FillSelect("idFrom",Arr);
+    }
+
+    //--------------------------------------------------------------------------- ETH Send
+    const onClickConnect = async function()
+    {
+        try
+        {
+            var res=await ethereum.request({ method: 'eth_requestAccounts' });
+            SetVisibleBlock("idConnect",0);
+        }
+        catch (error)
+        {
+            console.error(error);
+        }
+    };
+    function Eth16(Sum)
+    {
+        return (Math.floor(Sum*1000000000000000000)).toString(16);
+    }
+    function GasPrise()
+    {
+        return ethereum.request({ method: 'eth_gasPrice',params:[] });
+    }
+
+    function SendIDToEth(ID)
+    {
+        for(var i=0;i<OrderArr.length;i++)
+        {
+            var Order=OrderArr[i];
+            if(Order.ID===ID)
+            {
+                return SendOrderToEth(Order);
+            }
+        }
+        return SetError("Error order ID");
+    }
+
+
+    async  function SendOrderToEth(Order)
+    {
+        const Params = {
+            nonce: '0x00',
+
+            gasPrice: await GasPrise(),
+            gas: Eth16(1000000/1000000000000000000),
+
+            to: glInfo.EthSmartAddr,
+            from: await ethereum.GetSelectedAddress(),
+            //from: ethereum.selectedAddress,
+
+            value: 0,
+            data: '0x00FFEEDDCCAA',
+        };
+
+
+        try
+        {
+            // txHash is a hex string
+            // As with any RPC call, it may throw an error
+            const txHash = await ethereum.request({
+                method: 'eth_sendTransaction',
+                params: [Params],
+            });
+        }
+        catch (error)
+        {
+            console.log(error);
+            SetError(error.message);
+        }
+
+    }
+
+    //--------------------------------------------------------------------------- Send
+    function SendCoins()
+    {
+        ["idFrom","idTo","idAmount"].forEach(function(id)
+        {
+            if(!$(id).value)
+            {
+                SetError("Need set "+id.substr(2));
+                throw "Error";
+            }
+
+        });
+
+        SmartGetInfo(function(Info)
+        {
+            let Params=
+                {
+                    From:idFrom.value,
+                    To:idTo.value,
+                    Amount:+idAmount.value,
+                    Description:idDescription.value,
+                }
+
+            var NeedFee=Info.NOTARY.Fee?Info.NOTARY.Fee*Params.Amount:0;
+            Params.Fee=Math.max(NeedFee,Info.NOTARY.MinFee);
+
+            DoConfirm("Send "+idMode.innerText,CreateSendHTML(Params),function()
+            {
+                MSendCall(+idFrom.value,"SendOrder",Params,[],+idFrom.value);
+            });
+        })
+    }
+    function CreateSendHTML(Params)
+    {
+        var Str=`
+        <DIV align='left'>
+        <hr>
+        <txtr><txth>From:</txth><txtv>${Params.From}</txtv></txtr>
+        <txtr><txth>To:</txth><txtshort>${Params.To}</txtshort></txtr>
+        <txtr><txth>Amount:</txth><txtvo>${Params.Amount}</txtvo><txth>Fee:</txth><txtvo>${Params.Fee}</txtvo></txtr>
+        <txtr><txth>Description:</txth><txtv>${Params.Description}</txtv></txtr>
+        <hr>
+        <txtr><txth>TOTAL:</txth><txtvo>${Params.Amount+Params.Fee}</txtvo>TERA</txtr>
+
+        </DIV>`
+
+        return Str;
+    }
+
+    function ClearSend()
+    {
+        ["idFrom","idTo","idAmount","idDescription"].forEach(id => $(id).value="");
+    }
+
+    //--------------------------------------------------------------------------- Process orders
+
+    function IsMyOrder(Order)
+    {
+        if(USER_ACCOUNT_MAP[Order.From] || USER_ACCOUNT_MAP[Order.To] || TESTMODE)
+            return 1;
+        else
+            return 0;
+    }
+
+    function GetShortAddr(Addr)
+    {
+        return Addr.substr(0,4)+"..."+Addr.substr(Addr.length-4);
+    }
+    function GetStateOrder(Item)
+    {
+        if(Item.Process===1)
+            return "Signed";
+        return Item.Period;
+    }
+    function GetBtActOrder(Item)
+    {
+        //Process
+        var Str="-";
+        if(Item.Process===1)
+        {
+            Str='<button class="bteth" onclick="SendIDToEth('+Item.ID+')">To Eth</button>';
+        }
+        return Str;
+    }
+
+
+
+    //--------------------------------------------------------------------------- List orders
+    function UpdateOrderList()
+    {
+        SmartGetInfo(function()
+        {
+            LoadOrderNext(glInfo.NOTARY.NextID,function(Arr)
+            {
+                OrderArr=Arr;
+                //console.log(Arr);
+                SetGridData(Arr,"idOrders");
+            })
+        });
+    }
+    function LoadOrderNext(ID,F,Arr)
+    {
+        if(!Arr)
+            Arr=[];
+
+        if(!ID && F)
+            F(Arr);
+
+        if(!ID || !glInfo)
+            return;
+
+        MStaticCall(glInfo.NotarySmartAcc,"GetOrder",{ID:ID},[],function (Err,Order)
+        {
+            if(Err)
+                SetError(Order);
+
+            if(Err || !Order)
+            {
+                if(F)
+                    F(Arr);
+                return;
+            }
+
+            if(IsMyOrder(Order))
+            {
+                Order.BlockNum=GetOrderBlockNum(Order);
+
+                if(Order.BlockNum+glInfo.NOTARY.TransferPeriod<INFO.CurBlockNum+WORK_DELTA)
+                {
+                    Order.Period="Clear";
+                }
+                else
+                if(Order.BlockNum+glInfo.NOTARY.SignPeriod<=INFO.CurBlockNum+WORK_DELTA)
+                {
+                    Order.Period="Slash";
+                }
+                else
+                if(Order.Process===0 && Order.BlockNum<=INFO.CurBlockNum-WORK_DELTA)
+                {
+                    Order.Period="Sign";
+                }
+                else
+                {
+                    Order.Period="Wait";
+                }
+
+                Arr.push(Order);
+                Order.Num=Arr.length;
+            }
+
+            LoadOrderNext(Order.NextID,F,Arr);
+        });
+    }
+
+    //--------------------------------------------------------------------------- Owner smart
+    function SmartGetEmpty()
+    {
+        var Params=
+            {
+                CommonNum:0,
+                EthSmartAddr:"1234500000000000000000000000000000000000",
+
+                TokenPoolAcc:0,
+                NotarySmartAcc:0,
+                NotaryArr:[{Name:"",Addr:"0000000000000000000000000000000000000000",CanSign:1}],
+            };
+        if(TESTMODE)
+        {
+            Params.NotarySmartAcc=602;
+            Params.Channel=606;
+            Params.Fee=0.01;
+            Params.MinFee=3;
+        }
+        idList2.value=JSON.stringify(Params,"",4);
+    }
+
+    function SmartSetInfo()
+    {
+        if(!idList2.value)
+            return SetError("Need set params");
+        var Params=JSON.parse(idList2.value);
+        delete Params.NOTARY;
+        SendCall(0,"SetInfo",Params,[],SMART.Owner);
+    }
+
+
+
+    function SmartGetInfo(F)
+    {
+        if(!F)
+            idList2.value="";
+        var Num=+idAccGetInfo.value;
+        StaticCall(Num,"GetInfo",{},[],function (Err,Value)
+        {
+            if(Err || !Value)
+            {
+                if(Err)
+                    SetError(Value);
+                return;
+            }
+
+            glInfo=Value;
+            if(glInfo.NotarySmartAcc)
+                MStaticCall(glInfo.NotarySmartAcc,"GetChannel",{Channel:glInfo.Channel?glInfo.Channel:SMART.Account},[],function (Err,Value)
+                {
+                    if(Err || !Value)
+                    {
+                        if(Err)
+                            SetError(Value);
+                        return;
+                    }
+
+                    glInfo.NOTARY=Value;
+                    glInfo.Fee=Value.Fee;
+                    if(F)
+                        return F(glInfo);
+
+                    idList2.value=JSON.stringify(glInfo,"",4);
+                });
+            else
+            if(!F)
+                idList2.value=JSON.stringify(glInfo,"",4);
+        });
+
+    }
+
+
+
+
+    //--------------------------------------------------------------------------- common smart-contract lib
+
+    function GetOrderBlockNum(Order)
+    {
+        return Math.floor(Order.ID/1000);
+    }
+
+    //--------------------------------------------------------------------------- Proxy support
+    function MSendCall(To,Name,Params,ParamsArr,From)
+    {
+        if(typeof Params!=="object")
+            return SetError("Error call "+Name);
+        Params.cmd=Name;
+        if(TESTMODE)
+            return SendCall(To,Name,Params,ParamsArr,From);
+        else
+            return SendCall(To,"Call",Params,ParamsArr,From);
+    }
+    function MStaticCall(To,Name,Params,ParamsArr,F)
+    {
+        if(typeof Params!=="object")
+            return SetError("Error call "+Name);
+        Params.cmd=Name;
+        // if(TESTMODE)
+        //     return StaticCall(To,Name,Params,ParamsArr,F);
+        // else
+        return StaticCall(To,"Call",Params,ParamsArr,F);
+
+    }
+
+
+    //--------------------------------------------------------------------------- Saving support
+    function SaveValues()
+    {
+        SaveToStorageByArr(SaveIdArr);
+    }
+    function LoadValues()
+    {
+        LoadFromStorageByArr(SaveIdArr,function (Key)
+        {
+
+        },1);
+    }
+    function PrepareSavingItems()
+    {
+        for(var n = 0; n < SaveIdArr.length; n++)
+        {
+            var Item = $(SaveIdArr[n]);
+            Item.addEventListener("change",SaveValues);
+        }
+    }
+
+</script>
+
+
+
+
+<style>
+    body
+    {
+        background-color: #2E3857;
+        color: white;
+    }
+
+    input
+    {
+        width: 70px;
+    }
+
+    button
+    {
+        height: 26px;
+        width: 95px;
+        margin: 5px;
+        color:white;
+        background-color: #2E3857;
+        border: 1px solid #888;
+    }
+
+    button:hover
+    {
+        color: #cb763a;
+        cursor: pointer;
+    }
+    .bteth
+    {
+        width: 50px;
+        padding:0;
+    }
+    .btlist
+    {
+        width: 150px;
+        height:40px;
+        margin:10px 2px 30px 2px;
+    }
+
+    .raw
+    {
+        margin: 10px 5px;
+        font-size: 16px;
+    }
+    .raw-head
+    {
+        display: block;
+        margin: 2px;
+        text-align: left;
+    }
+    .raw-item
+    {
+        background-color2: #CCC;
+        margin: 2px;
+        height:30px;
+        width:99%;
+    }
+    #idAmount
+    {
+        color2:#E9764B;
+        color:#1e21cb;
+        font-weight: bold;
+    }
+
+    txtr
+    {
+        display: -webkit-box;
+        display: -webkit-flex;
+        display: -ms-flexbox;
+        margin: 5px;
+    }
+    txth
+    {
+        font-weight: bold;
+    }
+    txtv
+    {
+        margin-left: 5px;
+    }
+    txtvo
+    {
+        margin-left: 5px;
+        color:#E9764B;
+        font-weight: bold;
+        padding: 0 5px;
+    }
+    txtshort
+    {
+        margin-left: 5px;
+        font-size: 12px;
+        padding-top:3px;
+    }
+
+    #idConfirm
+    {
+        background-color:#DBE2F8;
+        max-width: 300px;
+    }
+    #idConnect
+    {
+        height:50px;
+        width:200px;
+    }
+
+</style>
+
+<div align="center" style="width:98%">
+    <div align="left" style="max-width:400px">
+
+        <div align='center' id="idMain" style="display:none">
+
+            <menu>
+
+                <item data-ref="mMonitor" id="mMonitor">
+                    MONITOR
+                </item>
+
+                <item data-ref="mSend" id="mSend">
+                    SEND
+                </item>
+
+                <item data-ref="mInfo" id="mInfo">
+                    INFO
+                </item>
+
+                <item data-ref="mOwner" id="mOwner">
+                    OWNER
+                </item>
+
+            </menu>
+
+
+
+
+
+            <content data-ref="mInfo">
+
+                Common TERA-ETH Bridge information
+
+            </content>
+
+            <content data-ref="mMonitor">
+                <button id="idConnect" onclick="onClickConnect()"><img src="https://metamask.io/images/mm-logo.svg"></button>
+                <hr>
+                <table id="idOrders" class="grid">
+                    <tr>
+                        <th id="Item.ID" class="id">ID</th>
+                        <th id="Item.From" class="">From</th>
+                        <th id="GetShortAddr(Item.To)" class="">To</th>
+                        <th id="Item.Amount" class="sum bold">Amount</th>
+                        <!--<th id="Item.Description" class="desc">Description</th>-->
+                        <th id="(GetStateOrder(Item))">State</th>
+                        <th id="(GetBtActOrder(Item))">Action</th>
+                    </tr>
+                </table>
+
+            </content>
+
+            <content data-ref="mSend">
+                <div align="left">
+                    <div class="raw">
+                        <div class="raw-head">Bridge mode:</div>
+                        <select size="1" id="idMode" class="raw-item" style="width: 120px">
+                            <option value="Send">TERA->ETH</option>
+                            <!--<option value="Get">ETH->TERA</option>-->
+                        </select>
+                    </div>
+                    <div class="raw">
+                        <div class="raw-head">From:</div>
+                        <select size="1" id="idFrom" class="raw-item">
+                            <option value="0">Loading...</option>
+                        </select>
+                    </div>
+                    <div class="raw">
+                        <div class="raw-head">To:</div>
+                        <input type="string" id="idTo" class="raw-item" style="font-size: 12px;">
+                    </div>
+                    <div class="raw">
+                        <div class="raw-head">Amount:</div>
+                        <input type="number" id="idAmount" class="raw-item" style="text-align:right;">
+                    </div>
+                    <div class="raw">
+                        <div class="raw-head">Description:</div>
+                        <TEXTAREA id="idDescription" rows="2" cols="30" class="raw-item"></TEXTAREA>
+                    </div>
+                    <div class="raw">
+                        <button onclick="SendCoins()">SEND</button>
+                        <button onclick="ClearSend()">CLEAR</button>
+                    </div>
+                </div>
+
+            </content>
+
+
+            <content data-ref="mOwner">
+
+                <menu>
+                    <item data-ref="sSmart">
+                        SMART
+                    </item>
+
+                    <item data-ref="mLog" id="tlog">
+                        Logs
+                    </item>
+
+                </menu>
+
+                <content data-ref="sSmart">
+                    <button onclick="SmartGetEmpty()">Empty</button>
+                    <button onclick="SmartGetInfo()">Get</button>
+                    <button onclick="SmartSetInfo()">Set smart</button>
+                    <br>
+
+                    <TEXTAREA id="idList2" rows="20" cols="40" style="width:99%"></TEXTAREA>
+                    <input type="number" id="idAccGetInfo">
+                </content>
+
+                <content data-ref="mLog">
+                    <button onclick="idLogs.value=null">Clear</button>
+                    <TEXTAREA id="idLogs" rows="22" cols="40" style="width:99%"></TEXTAREA>
+                </content>
+            </content>
+
+
+
+        </div>
+    </div>
+</div>
+
+
+
+
+
+
+
+
+

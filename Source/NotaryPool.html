@@ -1,0 +1,805 @@
+<!--<script src="/file/70823524/0">TAB main-net</script>-->
+<script src="/file/7359663/0">TAB test-net</script>
+<!--<script src="/file/196/0">TAB local-net</script>-->
+
+
+<script>
+    ALL_ACCOUNTS=1;
+    var TESTMODE=0;
+    var glNetwork="TERA";
+    var WORK_DELTA=1;//отступ от краев внтутри разрешенного диапазона работы
+    var MAX_OLD_ORDER_LENGH=20;
+
+    var glPrivKey,glPubKey,glAddr;
+    var glInfo;
+    var glNotaryNum=-1;
+    var WorkStruct={};
+    var SaveIdArr=["idCurAccount","idChannel","idPrivKey"];
+
+    window.addEventListener('Init',function ()
+    {
+        if(SMART.Num===7)
+            TESTMODE=1;
+
+        PrepareSavingItems();
+        CheckArr();
+        LoadValues();
+        CalcSecret();
+        GetChannel();
+    });
+    window.addEventListener('UpdateInfo',function ()
+    {
+        CheckArr();
+    });
+
+    window.addEventListener('Event',function(e)
+    {
+        var Msg=e.detail;
+        var Data=Msg.Description;
+
+        if(Msg.Error)
+        {
+            SetError(Data);
+        }
+        // else
+        // if(Data.From===idFrom.value)
+        // {
+        //     if(Data.cmd==="AddOrder" && !TESTMODE)
+        //         ClearSend();
+        // }
+        var Str;
+        if(typeof Data==="object")
+            Str=JSON.stringify(Data,"",4)
+        else
+            Str=Data;
+        idLogs.value=Str+"\n-------\n"+idLogs.value;
+    });
+
+
+    function CheckArr()
+    {
+        var bOwner=0;
+        var Arr=[];
+        for(var i=0;i<USER_ACCOUNT.length;i++)
+        {
+            var Item=USER_ACCOUNT[i];
+            if(SMART.Owner===Item.Num)
+                bOwner=1;
+
+            if(Item.Currency!==0)
+                continue;
+
+            var Value={value:Item.Num, text:Item.Num+"."+Item.Name+"  "+SUM_TO_STRING(Item.Value,Item.Currency,1)};
+            Arr.push(Value);
+
+
+        }
+
+        SetVisibleBlock("mOwner",bOwner);
+
+        FillSelect("idCurAccount",Arr);
+
+    }
+
+
+    //--------------------------------------------------------------------------- Test mode
+    var TestNum=0;
+    function GetTestOrder()
+    {
+        TestNum++;
+        var AddrTo = new Uint8Array(20);
+        window.crypto.getRandomValues(AddrTo);
+        AddrTo=GetHexFromArr(AddrTo);
+        var Order={Channel:idChannel.value, TestTo:SMART.Account,TestSum:3, From:""+(10+random(1000)), To:AddrTo, Amount:random(1000), Description:"Super test "+TestNum};
+        return Order;
+    }
+    function AddNew()
+    {
+        var Order=GetTestOrder();
+        MSendCall(+idCurAccount.value,"RunOrder",Order,[],SMART.Owner);
+    }
+
+    var LastTestOrder;
+    function SlashProof()
+    {
+        if(!glInfo)
+            return ;
+
+        var Order;
+        if(LastTestOrder)
+            Order=LastTestOrder;
+        else
+        {
+            Order=GetTestOrder();
+            var BlockNum=INFO.CurBlockNum-glInfo.SignPeriod-5;
+            Order.ID=BlockNum*1000;
+        }
+        //LastTestOrder=Order;
+
+        var SignArr=GetSignOrder(Order);
+        Order.Notary=0;
+        MSendCall(0,"SlashProof",Order,SignArr,+idCurAccount.value);
+    }
+
+    function DoOrderList()
+    {
+        StartList("List",function(Arr)
+        {
+            console.log(Arr);
+        });
+    }
+    function DoCancelOrder(ID)
+    {
+        MSendCall(SMART.Account,"CancelOrder",{ID:ID},[],+idCurAccount.value);
+    }
+    function DoGetOrder(ID)
+    {
+        MStaticCall(0,"GetOrder",{ID:ID},[],function (Err,Value)
+        {
+            if(Err)
+                SetError(Value);
+
+            if(Err || !Value)
+                return;
+            console.log(Value);
+        });
+    }
+
+    function DoDeposit()
+    {
+        MSendCall(+idCurAccount.value,"RunDeposit",{TestTo:SMART.Account,TestSum:100, Channel:idChannel.value,Notary:glNotaryNum},[],SMART.Owner);
+    }
+    function DoWithdraw()
+    {
+        MSendCall(+idCurAccount.value,"RunWithdraw",{TestTo:SMART.Account, Channel:idChannel.value,Notary:glNotaryNum,Amount:100,},[],SMART.Owner);
+    }
+
+
+    //--------------------------------------------------------------------------- Owner smart
+    function SmartGetEmpty()
+    {
+        var Params=
+            {
+                GetOrder:0,
+                SetChannel:0,
+                GetChannel:0,
+                NotarySign:0,
+                SlashProof:0,
+                ClearOrderList:0,
+                CancelOrder:0,
+
+                CommonNum:0,
+            };
+        idList2.value=JSON.stringify(Params,"",4);
+    }
+
+    function SmartSetInfo()
+    {
+        if(!idList2.value)
+            return SetError("Need set params");
+        var Params=JSON.parse(idList2.value);
+        SendCall(0,"SetInfo",Params,[],SMART.Owner);
+    }
+
+
+
+    function SmartGetInfo()
+    {
+        idList2.value="";
+        StaticCall(0,"GetInfo",{},[],function (Err,Value)
+        {
+            if(Err || !Value)
+            {
+                return;
+            }
+            idList2.value=JSON.stringify(Value,"",4);
+        });
+
+    }
+
+    //--------------------------------------------------------------------------- Owner channel
+    function GetEmpty()
+    {
+        var Params=
+            {
+                Network:glNetwork,
+                AccountTo:SMART.Account,
+                SignPeriod:10,
+                TransferPeriod:20,
+
+
+                Fee:0.001,
+                MinFee:1,
+                MinDeposit:10,
+                MinSign:1,
+                NotaryArr:[{Name:"",Addr:"0000000000000000000000000000000000000000",CanSign:1,AccDeposit:0,SumDeposit:0}],
+
+                SlashRate:1,
+                MinSlash:10,
+            };
+        if(TESTMODE)
+            Params.NotaryArr=[{Name:"=Test=",Addr:"5201A60DE4328750EC18C6BEA49B2DA10A82013F",CanSign:1,AccDeposit:SMART.Account,SumDeposit:10}];
+
+        idList.value=JSON.stringify(Params,"",4);
+    }
+
+    function SetChannel()
+    {
+        if(idChannel.value)
+        {
+            var Params;
+            if(idList.value)
+            {
+                Params=JSON.parse(idList.value);
+            }
+            else
+            {
+                return SetError("Need set params");
+            }
+
+            Params.AccountFrom=idChannel.value;
+
+            MSendCall(0,"SetChannel",Params,[],SMART.Owner);
+        }
+    }
+
+
+
+    function GetChannel()
+    {
+        idList.value="";
+        MStaticCall(0,"GetChannel",{Channel:+idChannel.value},[],function (Err,Value)
+        {
+            if(Err)
+                SetError(Value);
+
+            if(Err || !Value)
+                return;
+
+            for(var i=0;i<Value.NotaryArr.length;i++)
+            {
+                var Item=Value.NotaryArr[i];
+                Item.Addr=GetHexFromArr(Item.Addr);
+            }
+
+            delete Value.AccountFrom;
+            idList.value=JSON.stringify(Value,"",4);
+        });
+
+    }
+
+
+    //--------------------------------------------------------------------------- List orders
+
+    function StartList(Mode,F)
+    {
+        CalcSecret();
+        var Channel=+idChannel.value;
+        MStaticCall(0,"GetChannel",{Channel:Channel},[],function (Err,Value)
+        {
+            if(Err)
+                SetError(Value);
+
+            if(Err || !Value)
+                return;
+            glInfo=Value;
+
+            //проверка что имеем право подписывать
+            glNotaryNum=-1;
+            for(var i=0;i<glInfo.NotaryArr.length;i++)
+            {
+                if(GetHexFromArr(glInfo.NotaryArr[i].Addr)===glAddr)
+                    glNotaryNum=i;
+            }
+
+            if(glNotaryNum<0 && Mode==="Sign")
+                return SetError("Cannt Sign");
+
+            LoadOrderNext(Mode,F,glInfo.NextID);
+            LoadOrderNext(Mode,F,glInfo.NextID2);
+        });
+    }
+
+
+    function LoadOrderNext(Mode,F,ID,Arr)
+    {
+        if(!Arr)
+            Arr=[];
+
+        if(!ID && F)
+            F(Arr);
+
+        if(!ID || !glInfo)
+            return;
+
+        MStaticCall(0,"GetOrder",{ID:ID},[],function (Err,Order)
+        {
+            if(Err)
+                SetError(Order);
+
+            if(Err || !Order)
+            {
+                if(F)
+                    F(Arr);
+                return;
+            }
+
+            Order.BlockNum=GetOrderBlockNum(Order);
+            // if(Mode==="List")
+            //     Arr.unshift(Order);
+
+            // if(Order.BlockNum+glInfo.TransferPeriod<INFO.CurBlockNum+WORK_DELTA)
+            // {
+            //     Order.Period="Clear";
+            //     //Clear period
+            //     if(Mode==="Clear")
+            //         Arr.unshift(Order);
+
+            // }
+            // else
+            // if(Order.BlockNum+glInfo.SignPeriod<=INFO.CurBlockNum+WORK_DELTA)
+            // {
+            //     Order.Period="Slash";
+            //     //Slash period
+            //     if(Mode==="Slash")
+            //         Arr.unshift(Order);
+            // }
+            // else
+            // if(Order.Process===0 && Order.BlockNum<=INFO.CurBlockNum-WORK_DELTA)
+            // {
+            //     Order.Period="Sign";
+            //     //Sign period
+            //     if(Mode==="Sign")
+            //     {
+            //         DoSignOrder(Order);
+            //     }
+            // }
+            // else
+            // {
+            //     Order.Period="Wait";
+            // }
+            if(Order.BlockNum+glInfo.TransferPeriod<INFO.CurBlockNum+WORK_DELTA)
+            {
+                Order.Period="Clear";
+            }
+            else
+            if(Order.BlockNum+glInfo.SignPeriod<=INFO.CurBlockNum+WORK_DELTA)
+            {
+                Order.Period="Slash";
+            }
+            else
+            if(Order.Process===0 && Order.BlockNum<=INFO.CurBlockNum-WORK_DELTA)
+            {
+                Order.Period="Sign";
+            }
+            else
+            {
+                Order.Period="Wait";
+            }
+
+            if(Mode==="List" || Mode===Order.Period)
+                Arr.unshift(Order);
+
+
+            LoadOrderNext(Mode,F,Order.NextID,Arr);
+        });
+    }
+
+    //--------------------------------------------------------------------------- Notary mode
+
+
+    function DoClearList()
+    {
+        StartList("Clear",function(Arr)
+        {
+            if(!Arr.length)
+                return;
+
+            if(Arr.length>MAX_OLD_ORDER_LENGH)
+                Arr.length=MAX_OLD_ORDER_LENGH;
+
+            //console.log(Arr);
+            var Order=Arr[Arr.length-1];
+            //console.log(Order);
+            MSendCall(SMART.Account,"ClearOrderList",{ID:Order.ID},[],+idCurAccount.value);
+            Arr.length=0;
+        });
+    }
+
+
+    function DoSignList()
+    {
+        if(!glPrivKey)
+            return SetError("Not calc PrivKey");
+        StartList("Sign",function(Arr)
+        {
+            for(var i=0;i<Arr.length;i++)
+            {
+                DoSignOrder(Arr[i]);
+            }
+            Arr.length=0;
+
+        });
+    }
+
+
+
+    function GetSignOrder(Order)
+    {
+        //рассчитываем хэш
+        var Hash=GetOrderHash(glNetwork,Order,glNotaryNum);
+        var Hash32=Buffer.from(Hash);
+        var PrivKey32=Buffer.from(glPrivKey);
+        var Sign = SignLib.sign(Hash32, PrivKey32, null,null);
+        var SignArr=[];
+        for(var i=0;i<64;i++)
+            SignArr.push(Sign.signature[i]);
+        SignArr.push(Sign.recovery+27)
+        return SignArr;
+    }
+    function DoSignOrder(Order)
+    {
+        if(HasSign(Order,glNotaryNum))
+            return;
+
+        // if(Order.BlockNum+glInfo.SignPeriod<context.BlockNum)
+        //     throw "Order is outdated (BlockNum="+BlockNum+")";
+
+
+        var SignArr=GetSignOrder(Order);
+        MSendCall(SMART.Account,"NotarySign",{ID:Order.ID,Notary:glNotaryNum},SignArr,+idCurAccount.value);
+    }
+
+
+    function GetAddrFromPubKey(PubKeyArr)
+    {
+        return keccak256(PubKeyArr.slice(1)).slice(12);
+    }
+
+
+    function SetPubKey()
+    {
+        glPubKey=SignLib.publicKeyCreate(glPrivKey, 0);
+        glAddr=GetHexFromArr(GetAddrFromPubKey(glPubKey));
+        idPubKey.value=glAddr;
+        SaveValues();
+    }
+
+    function CalcSecret()
+    {
+        idPrivKey.value=idPrivKey.value.trim();
+        if(idPrivKey.value)
+        {
+            glPrivKey=GetArrFromHex(idPrivKey.value);
+            SetPubKey();
+        }
+        else
+        {
+            var PubKey=[2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2];
+            ComputeSecret(PubKey,function (ArrSecret)
+            {
+                glPrivKey=ArrSecret;
+                SetPubKey();
+            },+idCurAccount.value);
+        }
+
+    }
+    function ShowPrivKey()
+    {
+        idPrivKey.value=GetHexFromArr(glPrivKey);
+        SaveValues();
+    }
+
+
+    //--------------------------------------------------------------------------- common smart-contract lib
+    function GetOrderHash(Network,Order,Notary)
+    {
+        if(!Order.ID)
+            throw "Error order ID";
+        if(typeof Order.Amount!=="number" || Order.Amount>1e12 || Order.Amount<0)
+            throw "Error order Amount";
+
+        // var Str=Network;
+        // Str+=":"+Notary;
+        // Str+=":"+Order.Channel;
+        // Str+=":"+Order.ID;
+        // Str+=":"+Order.From;
+        // Str+=":"+Order.To;
+        // Str+=":"+Order.Amount;
+        // Str+=":"+Order.Description;
+
+        // return sha256(Str);
+
+
+        var Buf=[];
+        EncodeStr(Buf,Network);
+        EncodeUint(Buf,Notary);
+        EncodeUint(Buf,Order.Channel);
+        EncodeUint(Buf,Order.ID);
+        EncodeUint(Buf,+Order.From);
+        EncodeStr(Buf,Order.To);
+        EncodeUint(Buf,Order.Amount);
+        EncodeStr(Buf,Order.Description);
+
+
+        return  sha256(Buf);
+
+    }
+    function HasSign(Order,Notary)
+    {
+        var SignArr=Order.SignArr;
+        for(var i=0;i<SignArr.length;i++)
+        {
+            if(SignArr[i].Notary===Notary)
+                return 1;
+        }
+        return 0;
+    }
+    function GetOrderBlockNum(Order)
+    {
+        return Math.floor(Order.ID/1000);
+    }
+
+    //encode lib
+
+    function EncodeUint(arr,Num)
+    {
+        if(!Num)
+            Num = 0;
+        var len = arr.length;
+        arr[len + 5] = Num & 0xFF;
+        arr[len + 4] = (Num >>> 8) & 0xFF;
+        arr[len + 3] = (Num >>> 16) & 0xFF;
+        arr[len + 2] = (Num >>> 24) & 0xFF;
+
+        var NumH = Math.floor(Num / 4294967296);
+        arr[len + 1] = NumH & 0xFF;
+        arr[len + 0] = (NumH >>> 8) & 0xFF;
+    }
+
+    function EncodeStr(arr,Str,ConstLength)
+    {
+        if(!Str)
+            Str = "";
+        var arrStr = toUTF8Array(Str);
+
+        var length;
+        var len = arr.length;
+
+        if(ConstLength)
+        {
+            length = ConstLength;
+        }
+        else
+        {
+            length = arrStr.length;
+            if(length > 65535)
+                length = 65535;
+        }
+
+        for(var i = 0; i < length; i++)
+        {
+            if(arrStr[i])
+                arr[len + i] = arrStr[i];
+            else
+                arr[len + i] = 0;
+        }
+
+        arr.push(0x3a);
+    }
+
+    function toUTF8Array(str)
+    {
+        var utf8 = [];
+        for(var i = 0; i < str.length; i++)
+        {
+            var charcode = str.charCodeAt(i);
+            if(charcode < 0x80)
+                utf8.push(charcode);
+            else
+            if(charcode < 0x800)
+            {
+                utf8.push(0xc0 | (charcode >> 6), 0x80 | (charcode & 0x3f));
+            }
+            else
+            if(charcode < 0xd800 || charcode >= 0xe000)
+            {
+                utf8.push(0xe0 | (charcode >> 12), 0x80 | ((charcode >> 6) & 0x3f), 0x80 | (charcode & 0x3f));
+            }
+            else
+            {
+                i++;
+                charcode = 0x10000 + (((charcode & 0x3ff) << 10) | (str.charCodeAt(i) & 0x3ff));
+                utf8.push(0xf0 | (charcode >> 18), 0x80 | ((charcode >> 12) & 0x3f), 0x80 | ((charcode >> 6) & 0x3f), 0x80 | (charcode & 0x3f));
+            }
+        }
+        return utf8;
+    }
+
+    //--------------------------------------------------------------------------- Proxy support
+    function MSendCall(To,Name,Params,ParamsArr,From)
+    {
+        if(typeof Params!=="object")
+            return SetError("Error call "+Name);
+        Params.cmd=Name;
+        if(TESTMODE)
+            return SendCall(To,Name,Params,ParamsArr,From);
+        else
+            return SendCall(To,"Call",Params,ParamsArr,From);
+    }
+    function MStaticCall(To,Name,Params,ParamsArr,F)
+    {
+        if(typeof Params!=="object")
+            return SetError("Error call "+Name);
+        Params.cmd=Name;
+        //console.log(Params);
+        if(TESTMODE)
+            return StaticCall(To,Name,Params,ParamsArr,F);
+        else
+            return StaticCall(To,"Call",Params,ParamsArr,F);
+
+    }
+
+    //--------------------------------------------------------------------------- Saving support
+    function SaveValues()
+    {
+        SaveToStorageByArr(SaveIdArr);
+    }
+    function LoadValues()
+    {
+        LoadFromStorageByArr(SaveIdArr,function (Key)
+        {
+            CalcSecret();
+        },1);
+    }
+    function PrepareSavingItems()
+    {
+        for(var n = 0; n < SaveIdArr.length; n++)
+        {
+            var Item = $(SaveIdArr[n]);
+            Item.addEventListener("change",SaveValues);
+        }
+    }
+
+</script>
+
+
+
+
+<style>
+    body
+    {
+        background-color: #2E3857;
+        color: white;
+    }
+
+    input
+    {
+        width: 70px;
+    }
+
+    button
+    {
+        height: 26px;
+        width: 95px;
+        margin: 5px;
+        color:white;
+        background-color: #2E3857;
+        border: 1px solid #888;
+    }
+
+    button:hover
+    {
+        color: #cb763a;
+        cursor: pointer;
+    }
+    .btlist
+    {
+        width: 150px;
+        height:40px;
+        margin:10px 2px 30px 2px;
+    }
+
+
+</style>
+
+<div align="center" style="width:98%">
+    <div align="left" style="max-width:400px">
+
+        <div align='center' id="idMain" style="display:none">
+
+            <menu>
+                <item data-ref="mNotary" id="mNotary">
+                    NOTARY
+                </item>
+                <item data-ref="mTest" id="mTest">
+                    TEST
+                </item>
+                <item data-ref="mOwner" id="mOwner">
+                    OWNER
+                </item>
+                <item data-ref="mlog">
+                    Logs
+                </item>
+
+            </menu>
+
+
+
+            <br><br>
+            Channel: <input type="number" id="idChannel"  value="100" onchange="SaveValues()">
+            <select size="1" id="idCurAccount" style="width: 180px" onchange="SaveValues()">
+                <option value="0">Loading...</option>
+            </select>
+            <br>
+
+
+            <content data-ref="mTest">
+                <button onclick="AddNew()">Add order</button>
+                <button onclick="SlashProof()">Slash Proof</button>
+                <button onclick="DoOrderList()">List orders</button>
+                <BR>
+                Order: <input type="string" id="idOrder"  value="0">
+                <button onclick="DoGetOrder(+idOrder.value)">Get</button>
+                <button onclick="DoCancelOrder(+idOrder.value)">Order cancel</button>
+                <BR>
+                <button onclick="DoDeposit()">Deposit</button>
+                <button onclick="DoWithdraw()">Withdraw</button>
+
+            </content>
+
+
+            <content data-ref="mNotary">
+                <button onclick="DoSignList()" class="btlist">Orders SIGN</button>
+                <button onclick="DoClearList()" class="btlist">List clear</button>
+                <br>
+
+                Addr:
+                <TEXTAREA id="idPubKey" rows="2" cols="40" style="width:99%"></TEXTAREA>
+                Privat key:
+                <TEXTAREA id="idPrivKey" rows="3" cols="40" style="width:99%" onchange="CalcSecret();"></TEXTAREA>
+                <button onclick="CalcSecret()">Calc Secret</button>
+                <button onclick="ShowPrivKey()">Show Secret</button>
+                <button onclick="idPrivKey.value=null;CalcSecret()">Reset secret</button>
+            </content>
+
+            <content data-ref="mOwner">
+
+                <menu>
+                    <item data-ref="sChannel">
+                        CHANNEL
+                    </item>
+                    <item data-ref="sSmart">
+                        SMART
+                    </item>
+                </menu>
+
+                <content data-ref="sChannel">
+                    <button onclick="GetEmpty()">Empty</button>
+                    <button onclick="GetChannel()">Get</button>
+                    <button onclick="SetChannel()">Set bridge</button>
+                    <br>
+                    <TEXTAREA id="idList" rows="20" cols="40" style="width:99%"></TEXTAREA>
+                </content>
+
+                <content data-ref="sSmart">
+                    <button onclick="SmartGetEmpty()">Empty</button>
+                    <button onclick="SmartGetInfo()">Get</button>
+                    <button onclick="SmartSetInfo()">Set smart</button>
+                    <br>
+
+                    <TEXTAREA id="idList2" rows="20" cols="40" style="width:99%"></TEXTAREA>
+                </content>
+
+            </content>
+
+            <content data-ref="mlog">
+                <button onclick="idLogs.value=null">Clear</button>
+                <TEXTAREA id="idLogs" rows="22" cols="40" style="width:99%"></TEXTAREA>
+            </content>
+
+        </div>
+    </div>
+</div>
+
+

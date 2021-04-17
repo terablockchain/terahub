@@ -1,0 +1,102 @@
+
+<script>
+
+    window.addEventListener('Event',function(e)
+    {
+        var Data=e.detail;
+        var Description=Data.Description;
+        console.log(Description);
+    });
+
+
+
+    //--------------------------------------------------------------------------- Owner mode
+    function DoGetEmpty()
+    {
+        var Params=
+            {
+                CommonNum:0,
+            };
+        idList.value=JSON.stringify(Params,"",4);
+    }
+
+    function DoSetInfo()
+    {
+        if(!idList.value)
+            return SetError("Need set params");
+        var Params=JSON.parse(idList.value);
+        SendCall(0,"SetInfo",Params,[],SMART.Owner);
+    }
+
+
+
+    function DoGetInfo()
+    {
+        idList.value="";
+        StaticCall(0,"GetInfo",{},[],function (Err,Value)
+        {
+            if(Err || !Value)
+            {
+                return;
+            }
+            idList.value=JSON.stringify(Value,"",4);
+        });
+
+    }
+</script>
+
+
+
+
+<style>
+    body
+    {
+        background-color: #2E3857;
+        color: white;
+    }
+
+    input
+    {
+        width: 70px;
+    }
+
+    button
+    {
+        height: 26px;
+        width: 95px;
+        margin: 5px;
+        color:white;
+        background-color: #2E3857;
+        border: 1px solid #888;
+    }
+
+    button:hover
+    {
+        color: #cb763a;
+        cursor: pointer;
+    }
+    .btlist
+    {
+        width: 150px;
+        height:40px;
+        margin:10px 2px 30px 2px;
+    }
+
+
+</style>
+
+<div align="center" style="width:98%">
+    <div align="left" style="max-width:400px">
+
+        <button onclick="DoGetEmpty()">Empty</button>
+        <button onclick="DoGetInfo()">Get</button>
+        <button onclick="DoSetInfo()">Set</button>
+        <br>
+
+        <TEXTAREA id="idList" rows="30" cols="40" style="width:99%">
+    </TEXTAREA>
+
+    </div>
+</div>
+
+

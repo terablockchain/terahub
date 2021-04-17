@@ -1,0 +1,101 @@
+//Proxy smart contract for NotaryPool.js, Bridge.js and etc
+
+function OnGet()//getting coins
+{
+    if(context.SmartMode)
+    {
+        var Item=context.Description;
+        if(typeof Item==="object")
+        {
+            return CallProxy(Item.cmd,Item);
+        }
+    }
+    else
+    if(context.Description.substr(0,1)==="{")
+    {
+        if(SetState())
+            return;
+    }
+}
+
+
+
+function ReadStorage()
+{
+    return ReadValue("INFO");
+}
+
+function WriteStorage(Item)
+{
+    WriteValue("INFO",Item);
+}
+
+
+function CallProxy(Name,Params,ParamArr)
+{
+    var Info=ReadStorage();
+    var LibNum=Info[Name];
+    if(!LibNum)
+    {
+        LibNum=Info.CommonNum;
+        if(!LibNum)
+            return;
+    }
+
+    var lib=require(LibNum);
+    return lib[Name](Params,ParamArr);
+}
+
+"public"
+function Call(Params,ParamArr)
+{
+    var RetValue=CallProxy(Params.cmd,Params,ParamArr);
+    if(Params.evt)
+        Event(Params);
+    return RetValue;
+}
+
+
+"public"
+function SetInfo(Params)
+{
+    if(context.FromNum!==context.Smart.Owner)
+        throw "Access is only allowed from Owner account";
+
+    WriteStorage(Params);
+}
+"public"
+function GetInfo(Params)
+{
+    return ReadStorage(Params);
+}
+
+
+"public"
+function GetKey(Params)
+{
+    return ReadValue(Params.Key,Params.Format);
+}
+
+
+//Lib
+function SetState()
+{
+    if(context.Account.Num===context.Smart.Account
+        && context.FromNum===context.Smart.Owner
+        && context.Description.substr(0,1)==="{")
+    {
+
+        var State=ReadState(context.Smart.Account);
+        var Data=JSON.parse(context.Description);
+        for(var key in Data)
+            State[key]=Data[key];
+
+        WriteState(State);
+        Event(State);
+        return 1;
+    }
+    return 0;
+}
+
+
