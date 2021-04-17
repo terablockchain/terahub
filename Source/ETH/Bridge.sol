@@ -48,7 +48,8 @@ contract Bridge is  OrderLib, BridgeERC20
         require(ConfCommon.WORK_MODE>0,"Pausing");
         require(Buf.length<=1024,"Error order buf size");
 
-        TypeOrder memory Order=GetOrderFromBuf(Buf,BUF_EXTERN2);
+        TypeOrder memory Order;
+        FillOrderBody(Order,Buf,BUF_EXTERN2);
 
         address AddrEth=GetAddrFromBytes20(Order.AddrEth);
 
@@ -110,7 +111,6 @@ contract Bridge is  OrderLib, BridgeERC20
 
     function NotarySign(uint40 ID, uint8 Notary, bytes32 SignR,bytes32 SignS,uint8 SignV)  public
     {
-        //todo Gas used 73k
 
         //1.Проверяем параметры, что ордер не устарел (SignPeriod)
         //2.Проверка разрешения вызова - нотариус в списке подписантов
@@ -121,7 +121,7 @@ contract Bridge is  OrderLib, BridgeERC20
         //7.Если достаточное число подписей - ставим признак Process=1
         //8.Записываем признак апдейта в канал
 
-        require(ID>0,"Error ID");
+        require(ID>0 && ID%2==0,"Error ID");
 
         //1
         uint Period=OrderInPeriod(ID);
@@ -186,8 +186,49 @@ contract Bridge is  OrderLib, BridgeERC20
     {
 
     }
-    function CancelOrder(uint40 ID)  public pure
+    function CancelOrder(uint40 ID) public
     {
+        //1. Проверяем время ордера больше SignPeriod
+        //2. Проверяем что Process===0
+        //3. Устанавливаем в ордере признак обработанности Process=100
+        //4. Возвращаем средства
+        //5.Записываем признак апдейта в канал
+
+        require(ID>0 && ID%2==0,"Error ID");
+
+        //1
+        uint Period=OrderInPeriod(ID);
+        require(Period==3,"Error order period (time stamp)");
+
+        TypeOrder memory Order=LoadOrder(ID);
+        require(Order.ID>0,"Error order ID");
+
+        //2
+        require(Order.Process==0,"The order has already been processed");
+
+        //3
+        Order.Process=100;
+        SaveOrderHeader(Order);
+
+        //4
+        //transfer
+        address payable AddrEth=payable(GetAddrFromBytes20(Order.AddrEth));
+
+        if(ConfCommon.WORK_MODE>=2)
+        {
+            //ERC20 mode
+
+
+            uint256 Amount=uint256(Order.Amount);
+            Token.SmartMint(AddrEth, Amount);
+
+        }
+
+        if(Order.NotaryFee>0)
+            AddrEth.transfer(Order.NotaryFee*1e9);//9 - > 18
+
+        //5
+        ConfData2.WorkNum++;
 
     }
 
@@ -202,7 +243,8 @@ contract Bridge is  OrderLib, BridgeERC20
         require(ConfCommon.WORK_MODE>0,"Pausing");
         require(Buf.length<=1024,"Error order buf size");
 
-        TypeOrder memory Order=GetOrderFromBuf(Buf,BUF_EXTERN);
+        TypeOrder memory Order;
+        FillOrderBody(Order,Buf,BUF_EXTERN);
         require(Order.Channel==ConfCommon.CHANNEL,"Error order channel");
         require(Order.ID>0,"Error order ID");
         require(Order.ID%2==1,"Error order ID");

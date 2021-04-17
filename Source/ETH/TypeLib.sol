@@ -78,6 +78,7 @@ contract TypeLib
         uint40 NextID;
 
         uint40 BodyID;
+        uint16 BodyLength;
 
         TypeSigner[] SignArr;
 

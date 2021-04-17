@@ -252,7 +252,7 @@ contract ConvertLib is TypeLib
     }
 
     //SizeMode: 2-from store,3-from extern tx
-    function GetOrderFromBuf(bytes memory Buf, uint SizeMode)  internal  pure returns (TypeOrder memory)
+    function FillOrderBody(TypeOrder memory Order, bytes memory Buf, uint SizeMode)  internal  pure
     {
         /*
         TERA:
@@ -266,7 +266,7 @@ contract ConvertLib is TypeLib
         Order.Description=DecodeStr(Buf);
         */
 
-        require(SizeMode>=BUF_STORE,"GetOrderFromBuf:SizeMode error");
+        require(SizeMode>=BUF_STORE,"FillOrderBody:SizeMode error");
 
         uint MustMinLength=4+5+4+20 +2 +8+8+2;
 
@@ -276,9 +276,8 @@ contract ConvertLib is TypeLib
             MustMinLength+= 1+66 + 8;//+1;
         //BUF_EXTERN2 - not add
 
-        require(Buf.length>=MustMinLength,"Error GetOrderFromBuf Data length");
+        require(Buf.length>=MustMinLength,"Error FillOrderBody Data length");
 
-        TypeOrder memory Order;
         uint16 size;
 
 
@@ -308,7 +307,7 @@ contract ConvertLib is TypeLib
         if(SizeMode==BUF_EXTERN2)//data from tx AddOrder
         {
             CheckBufPos(Buf,BufPos);
-            return Order;
+            return;
         }
 
 
@@ -333,7 +332,7 @@ contract ConvertLib is TypeLib
         if(SizeMode==BUF_EXTERN)//data from tx ExecOrder
         {
             CheckBufPos(Buf,BufPos);
-            return Order;
+            return;
         }
 
         //data from state
@@ -341,8 +340,6 @@ contract ConvertLib is TypeLib
         Order.NotaryFee=GetUint8(BufPos); BufPos+=8;
         //Order.Process=GetUint1(BufPos); BufPos++;
         CheckBufPos(Buf,BufPos);
-
-        return Order;
     }
 
     //SizeMode: 1-for sign, 2-for save to store,3-for extern use (get full info)

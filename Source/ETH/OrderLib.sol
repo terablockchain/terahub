@@ -96,32 +96,43 @@ contract OrderLib is NotaryLib
 
 //    function GetOrderHeader(uint40 ID) public view returns(bytes32)
 //    {
-//        uint Header=LoadHeader(ID);
+//        uint Header=LoadHeaderBytes(ID);
 //        return bytes32(Header);
 //    }
 //    function GetBody(uint40 BodyID,uint Length) public view returns(bytes memory)
 //    {
-//        return LoadBody(BodyID,Length);
+//        return LoadBodyBytes(BodyID,Length);
 //    }
+
+    //----------------------------------------------------------------------------------------------- SAVE/LOAD ORDER
+    function SaveOrderHeader(TypeOrder memory Order)internal
+    {
+        uint FData=(uint(Order.BodyLength)<<240) | (uint(Order.PrevID)<<200) | (uint(Order.NextID)<<160) | (uint(Order.BodyID)<<120)  | (uint(Order.Process)<<112);
+        SaveHeaderBytes(Order.ID,FData);
+    }
+    function FillOrderHeader(TypeOrder memory Order,uint FData)internal pure
+    {
+        Order.BodyLength = uint16((FData>>240) & 0xFFFFFFFFFF);
+        Order.PrevID     = uint40((FData>>200) & 0xFFFFFFFFFF);
+        Order.NextID     = uint40((FData>>160) & 0xFFFFFFFFFF);
+        Order.BodyID     = uint40((FData>>120) & 0xFFFFFFFFFF);
+        Order.Process    = uint8((FData>>112) & 0xFF);
+    }
 
     function LoadOrder(uint40 ID) internal view returns(TypeOrder memory)
     {
-        uint FData=LoadHeader(ID);
-
-        uint Length=(FData>>240) & 0xFFFFFFFFFF;
-        uint BodyID=(FData>>120) & 0xFFFFFFFFFF;
-
         TypeOrder memory Order;
-        if(Length==0)
+        uint FData=LoadHeaderBytes(ID);
+
+        FillOrderHeader(Order,FData);
+        if(Order.BodyID==0)
             return Order;
 
-        bytes memory Buf=LoadBody(BodyID,Length);
-        Order=GetOrderFromBuf(Buf,BUF_STORE);
-        Order.BodyID=uint40(BodyID);
         Order.ID=ID;
-        Order.PrevID=uint40((FData>>200) & 0xFFFFFFFFFF);
-        Order.NextID=uint40((FData>>160) & 0xFFFFFFFFFF);
-        Order.Process=uint8((FData>>112) & 0xFF);
+        bytes memory Buf=LoadBodyBytes(Order.BodyID,Order.BodyLength);
+        FillOrderBody(Order,Buf,BUF_STORE);
+
+
 
         return Order;
     }
@@ -135,16 +146,18 @@ contract OrderLib is NotaryLib
         return GetBufFromOrder(Order,BUF_EXTERN);
     }
 
+
     function SaveOrder(TypeOrder memory Order)internal
     {
         require(Order.BodyID>0, "Error Order.BodyID");
 
 
-        bytes memory Buf=GetBufFromOrder(Order,BUF_STORE);
-        uint FData=(uint(Buf.length)<<240) | (uint(Order.PrevID)<<200) | (uint(Order.NextID)<<160) | (uint(Order.BodyID)<<120)  | (uint(Order.Process)<<112);
 
-        SaveHeader(Order.ID,FData);
-        SaveBody(Order.BodyID,Buf);
+        bytes memory Buf=GetBufFromOrder(Order,BUF_STORE);
+        Order.BodyLength=uint16(Buf.length);
+
+        SaveOrderHeader(Order);
+        SaveBodyBytes(Order.BodyID,Buf);
     }
 
     function SaveNewOrder(TypeConf storage Conf,TypeOrder memory Order,uint8 CheckUnique)internal
@@ -155,7 +168,7 @@ contract OrderLib is NotaryLib
 
         if(CheckUnique>0)
         {
-            uint Header=LoadHeader(Order.ID);
+            uint Header=LoadHeaderBytes(Order.ID);
             require(Header==0,"Order was payed");
         }
 
@@ -171,13 +184,13 @@ contract OrderLib is NotaryLib
             uint Period=OrderInPeriod(Conf.LastOrderID);
             if(Period>=4)
             {
-                uint HeaderLast=LoadHeader(Conf.LastOrderID);
+                uint HeaderLast=LoadHeaderBytes(Conf.LastOrderID);
 
                 require(HeaderLast>0,"Error read HeaderLast");
 
                 if(HeaderLast>0)
                 {
-                    SaveHeader(Conf.LastOrderID,0);//удаляем его
+                    SaveHeaderBytes(Conf.LastOrderID,0);//удаляем его
                     if(Conf.FirstOrderID==Conf.LastOrderID)
                         Conf.FirstOrderID=0;
 
@@ -194,7 +207,7 @@ contract OrderLib is NotaryLib
         //записываем ссылку на этот ордер в предыдущем ордере
         if(Conf.FirstOrderID>0)
         {
-            uint HeaderFirst=LoadHeader(Conf.FirstOrderID);
+            uint HeaderFirst=LoadHeaderBytes(Conf.FirstOrderID);
             require(HeaderFirst>0,"Error read FirstOrderID");
 
             //обнуляем предыдущее значение PrevID - но вообще оно и так всегда пустое
@@ -204,7 +217,7 @@ contract OrderLib is NotaryLib
             //новая ссылка
             HeaderFirst = HeaderFirst |  (uint(Order.ID) << 200);
 
-            SaveHeader(Conf.FirstOrderID,HeaderFirst);
+            SaveHeaderBytes(Conf.FirstOrderID,HeaderFirst);
         }
 
         Conf.FirstOrderID=Order.ID;

@@ -56,7 +56,7 @@ contract StorageLib is TypeLib, ConvertLib
 
     //------------------------------------------------------------------------ Slots
 
-    function SaveHeader(uint ID,uint HeaderData)internal
+    function SaveHeaderBytes(uint ID,uint HeaderData)internal
     {
         uint PosHeader=(0xABCE<<240) | (ID<<200);
 
@@ -67,7 +67,7 @@ contract StorageLib is TypeLib, ConvertLib
         }
     }
 
-    function LoadHeader(uint ID)internal view returns (uint HeaderData)
+    function LoadHeaderBytes(uint ID)internal view returns (uint HeaderData)
     {
         uint PosHeader=(0xABCE<<240) | (ID<<200);
         // solhint-disable-next-line no-inline-assembly
@@ -78,7 +78,7 @@ contract StorageLib is TypeLib, ConvertLib
     }
 
 
-    function SaveBody(uint BodyID,bytes memory data)internal
+    function SaveBodyBytes(uint BodyID,bytes memory data)internal
     {
 
         uint PosBody = (0xABCE<<240) | (BodyID<<200) | 1;
@@ -103,7 +103,7 @@ contract StorageLib is TypeLib, ConvertLib
         }
     }
 
-    function LoadBody(uint BodyID,uint Length)internal view returns (bytes memory)
+    function LoadBodyBytes(uint BodyID,uint Length)internal view returns (bytes memory)
     {
 
         uint PosBody = (0xABCE<<240) | (BodyID<<200) | 1;
@@ -143,10 +143,10 @@ contract StorageLib is TypeLib, ConvertLib
 //
 //        //1 header
 //        uint FData=(data.length<<240)  | (PrevID<<200) | (NextID<<160) | (BodyID<<120);
-//        SaveHeader(Type,ID,FData);
+//        SaveHeaderBytes(Type,ID,FData);
 //
 //        //2 body
-//        SaveBody(Type,BodyID,data);
+//        SaveBodyBytes(Type,BodyID,data);
 //    }
 
 //    function LoadBytes(uint ID)internal view returns (bytes memory)
@@ -155,7 +155,7 @@ contract StorageLib is TypeLib, ConvertLib
 //
 //        //1 header
 //
-//        uint FData=LoadHeader(Type,ID);
+//        uint FData=LoadHeaderBytes(Type,ID);
 //
 //        uint Length=(FData>>240) & 0xFFFFFFFFFF;
 //        uint PrevID=(FData>>200) & 0xFFFFFFFFFF;
@@ -163,7 +163,7 @@ contract StorageLib is TypeLib, ConvertLib
 //        uint BodyID=(FData>>120) & 0xFFFFFFFFFF;
 //
 //
-//        return LoadBody(Type,BodyID,Length);
+//        return LoadBodyBytes(Type,BodyID,Length);
 //
 //    }
 
