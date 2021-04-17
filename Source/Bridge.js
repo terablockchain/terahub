@@ -1,6 +1,23 @@
+
+
+
 //--------------------------------------
 //BRIDGE Smart contract
 //--------------------------------------
+
+
+function OnGet()
+{
+    if(typeof context.Description==="string" && context.Description.substr(0,1)==="{")
+    {
+        if(SetState())
+            return;
+    }
+}
+
+
+
+
 
 function ReadStorage()
 {
@@ -19,13 +36,15 @@ function SendOrder(Params)
     if(!NotaryAcc)
         throw "Error: Not set NotarySmartAcc";
 
-    Send(context.Smart.Account, Params.Amount, Params.Description);
+    var Total=Round(Params.Amount+Params.TransferFee+Params.NotaryFee);
+    if(!Total || typeof Total!=="number")
+        throw "Error total amount";
 
-    // var NeedFee=Info.Fee?Info.Fee*Params.Amount:0;
-    // NeedFee=Math.max(NeedFee,Info.MinFee);
+    Send(context.Smart.Account, COIN_FROM_FLOAT2(Total), Params.Description);
 
     Params.cmd="AddOrder";
-    Move(context.Smart.Account,NotaryAcc,Params.Fee,Params);
+    var FeeCoin=COIN_FROM_FLOAT2(Params.NotaryFee);
+    Move(context.Smart.Account,NotaryAcc,FeeCoin,Params);
     Event(Params);
 
 }
@@ -38,8 +57,11 @@ function Refund(Order)
     if(!context.SmartMode)
         throw "Need run in smart mode";
 
-    Event("Refund: "+FLOAT_FROM_COIN(context.Value));
-    //Event(Order);
+
+    var Total=Order.Amount+Order.TransferFee+Order.NotaryFee;
+    Send(Order.AddrTera, COIN_FROM_FLOAT2(Total), "Refund");
+
+    Event(Order);
 }
 
 
@@ -52,8 +74,10 @@ function Order(Params)
 {
     //Проверяем параметры (дата входящего ордера еще не истекла)
     //Проверяем подписи
-    //Ставим признак что ордер выполнен (для защиты от дублей)
+    //Ставим признак что ордер выполнен (для защиты от дублей) и добавляем в отдельный список
     //Переводим средства
+
+    //отдельно процесс по удалению старых ордеров из списка
 }
 
 
@@ -117,17 +141,6 @@ function SetState()
 //-------------------------------------- for test mode only
 
 
-// function OnGet()//getting coins
-// {
-//     if(context.SmartMode)
-//     {
-//         var Item=context.Description;
-//         if(typeof Item==="object")
-//         {
-//             Event(Item);
-//         }
-//     }
-// }
 "public"
 function GetChannel(Params)
 {
@@ -178,4 +191,20 @@ function GetOrderBlockNum(Order)
 {
     return Math.floor(Order.ID/1000);
 }
+
+function Round(Sum)
+{
+    return Math.floor(0.5+Sum*1e9)/1e9;
+}
+
+
+function COIN_FROM_FLOAT2(Sum)
+{
+    var MAX_SUM_CENT = 1e9;
+    var SumCOIN=Math.floor(Sum);
+    var SumCENT = Math.floor((Sum+0.0000000001) * MAX_SUM_CENT - SumCOIN * MAX_SUM_CENT);
+    var Coin={SumCOIN:SumCOIN,SumCENT:SumCENT};
+    return Coin;
+}
+
 

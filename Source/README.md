@@ -7,12 +7,17 @@ Blockchains are independent islands in the information ocean and do not have bui
 
 ---
 
-Notary.js - Responsible signing of events in the Tera blockchain. 
+Notary.js - Responsible signing of events in the Tera blockchain.
+Notary Pool (Notary.js) - pool of notaries (Notary), organizes responsible signature creation. The correctness of the signature is guaranteed by the insurance deposit.
+Bridge (Bridge.js/Bridge.sol) - bridges across to other blockchains, organizes the transfer of coins, provides an interface to the user who needs to transfer coins. On the interface part, it looks at two blockchains at once to control the correctness of transactions. In case of incorrect behavior of the validators, it sends the cryptographic proof to the notary pool.
+DeFi - smart contracts for which the profit from commission fees from notaries is deducted. It can be owned by either one person or several on the principle of a joint-stock company through the sale of tokens. The funds from the token sale are used to cover the notary's security deposit.
+
+ 
 
 ---
 There are 3 types of actors in the exchange scheme:
 1. User account Tera
-2. Ethereum User Account
+2. Ethereum/Binance User Account
 3. Bridge Validators
 
 Physically, the users of items 1 and 2 can match.
@@ -21,9 +26,9 @@ Validators must have two complete blockchains: Ethereum and Tera. As a motivatio
 
 
 
-### From Ethereum
+### From Ethereum/Binance
 
-An Ethereum user sends tokens to a special smart contract that stores the token type, amount, and number of the recipient's Tera account. The commission for the transaction of the Ether blockchain is at the expense of the initiator.
+An Eth user sends tokens to a special smart contract that stores the token type, amount, and number of the recipient's Tera account. The commission for the transaction of the Ether blockchain is at the expense of the initiator.
 
 When receiving tokens for an Ethereum smart contract, the validators send a transaction about this event to the Tera blockchain in the form of a call to a specific smart contract method.
 
@@ -57,6 +62,11 @@ The validator transfers values only in the amount not exceeding its deposit. Per
 
 To complicate the attack, each validator has several signing nodes in its pool. They must be located on different secure servers. The transaction must have a sufficient number of node signatures. Thus, compromising one node will not lead to the loss of the validator's money.
 
+
+
+Teaser video: https://youtu.be/FCB9KemgeYw
+Description video: https://youtu.be/-kOWXWKadh8
+Telegram channel: https://t.me/terahub
 
 
 Protocol description:

@@ -21,28 +21,39 @@ function OnGet()//getting coins
 }
 
 //-------------------------------------- СТРУКТУРА ХРАНЕНИЯ
-// Адресация канала "CHANNEL":SmartAccount
-// Адресация ордера "ORDER":ID
+// Адресация канала "CHANNEL2":SmartAccount
+// Адресация ордера "ORDER2":ID
 
 
 function FormatChannel()
 {
     return {
-        Network:"str",
-        AccountFrom:"uint32", AccountTo:"uint32", //канал разрешенных вызовов
-        SignPeriod:"uint32",//период(время) для подписи
+        Name:"str",
+        AccountFrom:"uint32",//канал разрешенных вызовов
+        Pause:"uint32",
+        SignPeriod:"uint32",//период для подписи (в блоках)
         TransferPeriod:"uint32",//устаревание ордеров (в блоках)
 
-        Fee:"double", MinFee:"double",//комиссии за подпись
-        MinDeposit:"double", NotaryArr:[{Name:"str",Addr:"arr20",AccDeposit:"uint32",SumDeposit:"double", CanSign:"byte"}], //подписанты (валидаторы)
-        //требуемое минимальное число подписей
-        MinSign:"uint16",
+        NotaryFee:"double", MinNotaryFee:"double",//комиссии за подпись (в Терах)
+        MinDeposit:"double", //депозит в Терах
+
+        //подписанты (валидаторы)
+        NotaryArr:[{Name:"str",Addr:"arr20",AccDeposit:"uint32",SumDeposit:"double", CanSign:"byte", BlockFrom:"uint", BlockTo:"uint"}],
+        MinSign:"uint16",//требуемое минимальное число подписей
 
         //штрафные санкции
         SlashRate:"double",MinSlash:"double",
 
         NextID:"uint",
-        NextID2:"uint"
+        NextID2:"uint",
+
+        SignLib:"uint32",
+
+        WorkNum:"uint32",
+        WorkDel:"uint",
+
+        Flag:"uint",
+        Rate:"double"//курс для расчета комисии в Терах из (Order.Amount+Order.TransferFee)
     };
 }
 
@@ -51,10 +62,11 @@ function FormatOrder()
 {
     return  {
         //Body:
-        Channel:"uint32", ID:"uint",From:"str",To:"str",Amount:"double",Description:"str",
-
+        Channel:"uint32", ID:"uint",AddrTera:"uint32",AddrEth:"str",TokenID:"arr32",Amount:"double",TransferFee:"double",Description:"str",
+        //Signs:
+        SignArr:[{Notary:"byte",Sign:"arr65",Slash:"byte"}],
         //State:
-        Process:"byte",Fee:"double", SignArr:[{Notary:"uint32",Sign:"arr65",Slash:"byte"}], NextID:"uint", Flag:"uint"
+        Process:"byte",NotaryFee:"double", NextID:"uint", Flag:"uint"
     };
 }
 
@@ -65,47 +77,57 @@ function FormatOrder()
 
 function ReadChannel(AccountFrom)
 {
-    return ReadValue("CHANNEL:"+AccountFrom,FormatChannel());
+    return ReadValue("CHANNEL3:"+AccountFrom,FormatChannel());
 }
 function WriteChannel(Item)
 {
-    WriteValue("CHANNEL:"+Item.AccountFrom,Item,FormatChannel());
+    WriteValue("CHANNEL3:"+Item.AccountFrom,Item,FormatChannel());
 }
 
 
 function ReadOrder(ID)
 {
-    return ReadValue("ORDER:"+ID,FormatOrder());
+    return ReadValue("ORDER3:"+ID,FormatOrder());
 }
 
 function WriteOrder(Order)
 {
     if(!Order.ID)
         throw "Error Order.ID";
-    WriteValue("ORDER:"+Order.ID,Order,FormatOrder());
+    WriteValue("ORDER3:"+Order.ID,Order,FormatOrder());
 }
 function DeleteOrder(Order)
 {
     if(!Order.ID)
         throw "Error Order.ID";
-    RemoveValue("ORDER:"+Order.ID);
+    RemoveValue("ORDER3:"+Order.ID);
 }
 
 
 //-------------------------------------- добавление нового ордера
-//Order: {From,To,Amount,Description}
+//Order: {From,To,Amount,TransferFee,Description}
 //
 "public"
 function AddOrder(Data)//OnGet
 {
     if(!context.SmartMode)
         throw "Need run in smart mode";
-    if(context.TrNum>=1000)
-        throw "Big tx num, try later";
+    // if(context.TrNum>=1000)
+    //     throw "Big tx num, try later";
 
     var AccountFrom=context.FromNum;
     if(typeof Data!=="object")
         throw "AddOrder: Error type Data";
+
+    if(typeof Data.AddrTera!=="number" || !Data.AddrTera)
+        throw "Error 'AddrTera' value";
+    // if(typeof Data.AddrEth==="string")
+    //     Data.AddrEth=GetArrFromHex(Data.AddrEth);
+    if(!Data.AddrEth.length)
+        throw "Error 'To' value";
+    if(typeof Data.Description!=="string" || Data.Description.length>300)
+        throw "Error length 'Description'";
+
 
     //смотрим имеет ли право смарт - отправитель перевода добавлять ордера
     var Info=ReadChannel(AccountFrom);
@@ -114,21 +136,36 @@ function AddOrder(Data)//OnGet
 
 
     //проверка имеет ли право этот аккаунт принимать запросы и соотв. деньги
-    if(context.Account.Num!==Info.AccountTo)
-        throw "Errar sender account: "+context.Account.Num+"/"+Info.AccountTo;
+    if(context.Account.Num!==context.Smart.Account)
+        throw "Error account receiver: "+context.Account.Num+"/"+context.Smart.Account;
+
+    if(Info.Pause)
+        throw "Pause";
+
+
+    //расчет номера ордера внутри блока
+    var OrderNum=1;
+    if(Math.floor(Info.NextID/1000)===context.BlockNum)
+        OrderNum = (Info.NextID%1000)+2;
+    if(OrderNum>=1000)
+        throw "Big tx num, try later, OrderNum="+OrderNum;
+    var ID=context.BlockNum*1000 + OrderNum;
+
+
 
     var Order=
         {
             Channel:AccountFrom,
-            ID:context.BlockNum*1000+context.TrNum,
+            ID:ID,//context.BlockNum*1000+context.TrNum,
 
-            From:GetCheckStr(Data,"From",200),
-            To:GetCheckStr(Data,"To",200),
+            AddrTera:Data.AddrTera,
+            AddrEth:Data.AddrEth,
             Amount:parseFloat(Data.Amount),
-            Description:GetCheckStr(Data,"Description",1000),
+            TransferFee:parseFloat(Data.TransferFee),
+            Description:Data.Description,
 
             Process:0,
-            Fee:FLOAT_FROM_COIN(context.Value),
+            NotaryFee:FLOAT_FROM_COIN(context.Value),
             SignArr:[],
             NextID:Info.NextID,
         };
@@ -137,32 +174,26 @@ function AddOrder(Data)//OnGet
 
 
 
-    var NeedFee=Info.Fee?Info.Fee*Order.Amount:0;
-    NeedFee=Math.max(NeedFee,Info.MinFee);
-    if(NeedFee && NeedFee>Order.Fee)
-        throw "Error fee="+Order.Fee+" Fee must: "+NeedFee;
+    var NeedFee=Info.Rate*Info.NotaryFee*(Order.Amount+Order.TransferFee);
+    NeedFee=Round(Math.max(NeedFee,Info.MinNotaryFee));
+    if(NeedFee && NeedFee-Order.NotaryFee>1e-9)
+        throw "Error Notary fee="+Order.NotaryFee+" Fee must: "+NeedFee;
 
 
     WriteOrder(Order);
     RunEvent("Order",Order);
 
+    //  if(Info.NextID===Order.ID)
+    //     throw "Was Order.ID="+Order.ID;
 
     Info.NextID=Order.ID;
+    Info.WorkNum++;
     WriteChannel(Info);
 
     //Event(Info);
 }
 
 
-function GetCheckStr(Item,Name,MaxLength)
-{
-    var Str=Item[Name];
-    if(typeof Str!=="string")
-        throw "Error type "+Name;
-    if(Str.length>MaxLength)
-        throw "Error length "+Name;
-    return Str;
-}
 
 //-------------------------------------- задание параметров канала
 
@@ -175,6 +206,16 @@ function SetChannel(Params)
     if(Info)
     {
         Params.NextID=Info.NextID;
+        Params.NextID2=Info.NextID2;
+        Params.WorkNum=Info.WorkNum;
+        Params.WorkDel=Info.WorkDel;
+    }
+    else
+    {
+        Params.NextID=0;
+        Params.NextID2=0;
+        Params.WorkNum=0;
+        Params.WorkDel=0;
     }
 
     for(var i=0;i<Params.NotaryArr.length;i++)
@@ -209,14 +250,17 @@ function GetChannel(Params)
 "public"
 function NotarySign(Params, ParamSign)
 {
-    //1.Проверка разрешения вызова - нотариус в списке подписантов
-    //2.Проверяем параметры, что ордер не устарел (SignPeriod)
+    //1.Проверяем параметры, что ордер не устарел (SignPeriod)
+    //2.Проверка разрешения вызова - нотариус в списке подписантов
     //3.Проверяем что у валидатора есть минимальный депозит (SumDeposit/MinDeposit)
     //4.Проверяем что этот валидатор еще не подписывал
     //5.Проверяем подпись
     //6.Добавляем в массив подписей
     //7.Если достаточное число подписей - ставим признак Process=1
+    //8.Записываем признак апдейта в канал
 
+    if(Params.ID%2!==1)
+        throw "Error Mode Order ID="+Params.ID;
 
     var Order=ReadOrder(Params.ID);
     if(!Order)
@@ -226,14 +270,15 @@ function NotarySign(Params, ParamSign)
         throw "Error Order Channel = "+Order.Channel;
 
     //1
+    var BlockNum=GetOrderBlockNum(Params);
+    if(BlockNum+Info.SignPeriod<context.BlockNum)
+        throw "Order is outdated (BlockNum="+BlockNum+")";
+
+    //2
     var Notary=Params.Notary;
     var InfoItem=Info.NotaryArr[Notary];
     if(!InfoItem)
         throw "Error Notary number";
-    //2
-    var BlockNum=GetOrderBlockNum(Params);
-    if(BlockNum+Info.SignPeriod<context.BlockNum)
-        throw "Order is outdated (BlockNum="+BlockNum+")";
     //3
     if(InfoItem.SumDeposit<Info.MinDeposit)
         throw "No deposit required ("+InfoItem.SumDeposit+"/"+Info.MinDeposit+")";
@@ -242,7 +287,7 @@ function NotarySign(Params, ParamSign)
         throw "There was already a signature";
 
     //5
-    CheckSign(Info.Network,Order,Notary,InfoItem.Addr,ParamSign);
+    CheckSign(Info.SignLib,Order,InfoItem.Addr,ParamSign);
 
     //6
     Order.SignArr.push({Notary:Notary,Sign:ParamSign});
@@ -253,12 +298,17 @@ function NotarySign(Params, ParamSign)
 
     WriteOrder(Order);
     RunEvent("Sign",Order);
+
+    //8
+    Info.WorkNum++;
+    WriteChannel(Info);
+
 }
 
 
 
 
-//--------------------------------------доказательство обмана Params:{Notary, Channel,ID, From,To,Amount,Description}, ParamSign:arr65
+//--------------------------------------доказательство обмана Params:{Notary, Channel,ID, From,To,Amount,TransferFee,Description}, ParamSign:arr65
 "public"
 function SlashProof(Params,ParamSign)
 {
@@ -270,11 +320,16 @@ function SlashProof(Params,ParamSign)
     //6.Проверяем что такой подписи в ордере нет
     //7.Новые ордера добавляем в отдельный список фейковых ордеров
     //8.Добавляем подпись в ордер для предотвращения дальнейших штрафов с такой подписью и ставим Slash=1
-    //9.Устанавливаем в ордере Fee = 0
+    //9.Устанавливаем в ордере NotaryFee = 0
     //10.Штрафуем валидаторов (списанием с депозита), за основу берем большую сумму между полученным ордером и записанным в БД (так как может быть ситуация когда пришедший ID - "левый")
+    //11.Записываем признак апдейта в канал
+
 
     if(!Params.ID || typeof Params.ID!=="number")
         throw "Error Order ID="+Params.ID;
+
+    if(Params.ID%2!==1)
+        throw "Error Mode Order ID="+Params.ID;
 
     //1
     var Info=ReadChannel(Params.Channel);
@@ -297,7 +352,7 @@ function SlashProof(Params,ParamSign)
 
 
     //5
-    CheckSign(Info.Network,Params,Notary,InfoItem.Addr,ParamSign);
+    CheckSign(Info.SignLib,Params,InfoItem.Addr,ParamSign);
     var ParamSignStr=GetHexFromArr(ParamSign);
 
     //6
@@ -315,7 +370,7 @@ function SlashProof(Params,ParamSign)
     {
         OrderDB=Params;
         OrderDB.SignArr=[];
-        OrderDB.Fee=0;
+        OrderDB.NotaryFee=0;
         OrderDB.Process=200;
 
         //7
@@ -326,13 +381,13 @@ function SlashProof(Params,ParamSign)
     //8
     OrderDB.SignArr.push({Notary:Notary,Sign:ParamSign,Slash:1});
     //9
-    OrderDB.Fee=0;
+    OrderDB.NotaryFee=0;
 
     WriteOrder(OrderDB);
     RunEvent("Slash",OrderDB);
 
     //10
-    var SlashSum=Info.SlashRate*Math.max(OrderDB.Amount,Params.Amount);
+    var SlashSum=Info.SlashRate*Math.max(OrderDB.Amount+OrderDB.TransferFee, Params.Amount+Params.TransferFee);
     if(SlashSum<Info.MinSlash)
         SlashSum=Info.MinSlash;
     //отнимаем из депозита
@@ -342,6 +397,8 @@ function SlashProof(Params,ParamSign)
         InfoItem.SumDeposit=0;
     }
 
+    //11
+    Info.WorkNum++;
     WriteChannel(Info);
     //Event(Info);
 }
@@ -355,7 +412,7 @@ function ClearOrderList(Params)
     //На вход подается начальный номер ордера для перебора
     //1. Ищем конец (макс 20 переборов)//500 тиков каждый
     //2. Начиная с конца перебираем ордера и смотрим дату, если устарели (TransferPeriod) то удаляем (макс 5 штук)//1000 тиков каждый
-    //3. Если Order.Process==1 и есть Fee, то одинаковыми частями начисляем награду валидаторам - в массив NotaryArr.SumDeposit
+    //3. Если Order.Process==1 и есть NotaryFee, то одинаковыми частями начисляем награду валидаторам - в массив NotaryArr.SumDeposit
     //4. Удаляем ордер
     //5. Выдавать Event для коректировки начального номера
     //6. Записываем информацию по каналу обмена
@@ -394,7 +451,7 @@ function ClearOrderList(Params)
 
         //3
         var LSigns=Order.SignArr.length;
-        if(Order.Process===1 && Order.Fee && LSigns)
+        if(Order.Process===1 && Order.NotaryFee && LSigns)
         {
             //рассчитываем коэффициент выплаты
             var K=1/LSigns;
@@ -404,18 +461,23 @@ function ClearOrderList(Params)
                 var NotaryItem=Info.NotaryArr[Item.Notary];
                 if(NotaryItem && !Item.Slash)
                 {
-                    NotaryItem.SumDeposit+=Order.Fee*K;
+                    NotaryItem.SumDeposit+=Order.NotaryFee*K;
                 }
             }
         }
+
         //4
         DeleteOrder(Order);
+
+
         //5
+        Info.WorkDel=Order.ID;
         RunEvent("Delete",Order);
 
     }
 
     //6
+    Info.WorkNum++;
     WriteChannel(Info);
 
 }
@@ -430,6 +492,8 @@ function CancelOrder(Params)
     //2. Проверяем время ордера больше SignPeriod
     //3. Устанавливаем в ордере признак обработанности Process=100
     //4. Возвращаем средства
+    //5.Записываем признак апдейта в канал
+
 
     var Order=ReadOrder(Params.ID);
     if(!Order)
@@ -452,7 +516,11 @@ function CancelOrder(Params)
 
     //4
     Order.cmd="Refund";
-    Send(Info.AccountFrom,Order.Fee,Order);
+    Send(Info.AccountFrom,COIN_FROM_FLOAT2(Order.NotaryFee),Order);
+
+    //5
+    Info.WorkNum++;
+    WriteChannel(Info);
 }
 
 
@@ -543,7 +611,7 @@ function Withdraw(Params)
     RunEvent("Withdraw",Params);
 
     //6
-    Send(InfoItem.AccDeposit,Params.Amount,"Withdraw");
+    Send(InfoItem.AccDeposit,COIN_FROM_FLOAT2(Params.Amount),"Withdraw");
 
 
 }
@@ -680,66 +748,18 @@ function GetKey(Params)
 
 
 //lib
-
-function CheckSign(Network,Order,Notary,AddrNotary,ParamSign)
-{
-    //check sign by etherium style
-    if(ParamSign.length!==65)
-        throw "Error length sign arr";
-
-    var Hash=GetOrderHash(Network,Order,Notary);
-    var r = ParamSign.slice(0, 32);
-    var s = ParamSign.slice(32, 64);
-    var v=ParamSign[64];
-
-    var AddrStr=GetHexFromArr(ecrecover(Hash, v, r, s));
-    if(AddrStr!==GetHexFromArr(AddrNotary))
-        throw "Sign error";
-
-}
-
-
 function RunEvent(Name,Data)
 {
     Event({"cmd":Name,Data:Data});
 }
 
-
-//common smart-contract lib
-function GetOrderHash(Network,Order,Notary)
+function CheckSign(NumLib,Order,AddrNotary,ParamSign)
 {
-    if(!Order.ID)
-        throw "Error order ID";
-    if(typeof Order.Amount!=="number" || Order.Amount>1e12 || Order.Amount<0)
-        throw "Error order Amount";
-
-    // var Str=Network;
-    // Str+=":"+Notary;
-    // Str+=":"+Order.Channel;
-    // Str+=":"+Order.ID;
-    // Str+=":"+Order.From;
-    // Str+=":"+Order.To;
-    // Str+=":"+Order.Amount;
-    // Str+=":"+Order.Description;
-
-    // return sha256(Str);
-
-
-    var Buf=[];
-    EncodeStr(Buf,Network);
-    EncodeUint(Buf,Notary);
-    EncodeUint(Buf,Order.Channel);
-    EncodeUint(Buf,Order.ID);
-    EncodeUint(Buf,+Order.From);
-    EncodeStr(Buf,Order.To);
-    EncodeUint(Buf,Order.Amount);
-    EncodeStr(Buf,Order.Description);
-
-
-    return  sha256(Buf);
-
+    var lib=require(NumLib);
+    lib.CheckSign(Order,AddrNotary,ParamSign);
 }
 
+//--------------------------------------------------------------------------- common smart-contract lib
 function HasSign(Order,Notary)
 {
     var SignArr=Order.SignArr;
@@ -755,78 +775,22 @@ function GetOrderBlockNum(Order)
     return Math.floor(Order.ID/1000);
 }
 
-//encode lib
-
-function EncodeUint(arr,Num)
+// function Round(Sum)
+// {
+//     return Math.floor(Sum*1e9)/1e9;
+// }
+function Round(Sum)
 {
-    if(!Num)
-        Num = 0;
-    var len = arr.length;
-    arr[len + 5] = Num & 0xFF;
-    arr[len + 4] = (Num >>> 8) & 0xFF;
-    arr[len + 3] = (Num >>> 16) & 0xFF;
-    arr[len + 2] = (Num >>> 24) & 0xFF;
-
-    var NumH = Math.floor(Num / 4294967296);
-    arr[len + 1] = NumH & 0xFF;
-    arr[len + 0] = (NumH >>> 8) & 0xFF;
+    return Math.floor(0.5+Sum*1e9)/1e9;
 }
 
-function EncodeStr(arr,Str,ConstLength)
+
+function COIN_FROM_FLOAT2(Sum)
 {
-    if(!Str)
-        Str = "";
-    var arrStr = toUTF8Array(Str);
-
-    var length;
-    var len = arr.length;
-
-    if(ConstLength)
-    {
-        length = ConstLength;
-    }
-    else
-    {
-        length = arrStr.length;
-        if(length > 65535)
-            length = 65535;
-    }
-
-    for(var i = 0; i < length; i++)
-    {
-        if(arrStr[i])
-            arr[len + i] = arrStr[i];
-        else
-            arr[len + i] = 0;
-    }
-
-    arr.push(0x3a);
+    var MAX_SUM_CENT = 1e9;
+    var SumCOIN=Math.floor(Sum);
+    var SumCENT = Math.floor((Sum+0.0000000001) * MAX_SUM_CENT - SumCOIN * MAX_SUM_CENT);
+    var Coin={SumCOIN:SumCOIN,SumCENT:SumCENT};
+    return Coin;
 }
 
-function toUTF8Array(str)
-{
-    var utf8 = [];
-    for(var i = 0; i < str.length; i++)
-    {
-        var charcode = str.charCodeAt(i);
-        if(charcode < 0x80)
-            utf8.push(charcode);
-        else
-        if(charcode < 0x800)
-        {
-            utf8.push(0xc0 | (charcode >> 6), 0x80 | (charcode & 0x3f));
-        }
-        else
-        if(charcode < 0xd800 || charcode >= 0xe000)
-        {
-            utf8.push(0xe0 | (charcode >> 12), 0x80 | ((charcode >> 6) & 0x3f), 0x80 | (charcode & 0x3f));
-        }
-        else
-        {
-            i++;
-            charcode = 0x10000 + (((charcode & 0x3ff) << 10) | (str.charCodeAt(i) & 0x3ff));
-            utf8.push(0xf0 | (charcode >> 18), 0x80 | ((charcode >> 12) & 0x3f), 0x80 | ((charcode >> 6) & 0x3f), 0x80 | (charcode & 0x3f));
-        }
-    }
-    return utf8;
-}

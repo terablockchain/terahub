@@ -1,27 +1,61 @@
+
 <!--<script src="/file/70823524/0">TAB main-net</script>-->
 <script src="/file/7359663/0">TAB test-net</script>
 <!--<script src="/file/196/0">TAB local-net</script>-->
 
+<script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
+<script src="/smart/215">OrderLib test-net</script>
+<script src="/file/8251388/0">OrderLib client part test-net</script>
+
+
+
+
 
 <script>
+    var DELTA_REMOVE=50;
+    OLib.WORK_DELTA=2;//отступ от краев внутри разрешенного диапазона работы
+    OLib.ContractAddr="";
+
+    var MAX_OLD_ORDER_LENGH=20;
+
     ALL_ACCOUNTS=1;
-
     var TESTMODE=0;
-    var glNetwork="TERA-ETH";
-    var WORK_DELTA=5;//отступ от краев внтутри разрешенного диапазона работы
 
-    var glInfo;
-    var SaveIdArr=["idMode","idFrom","idTo","idAmount","idDescription"];
+    var glPrivKey;
+    var SaveIdArr=["idMode","idAddrTera","idAddrEth","idAmount","idTransferFee","idDescription", "idPrivKey"];
     var OrderArr=[];
+    var MonitorMode="MY";
+    var PrevMonitorMode;
+    var MapPending={};
+    var SendEthMap={};
+    var glSendNum=0;
+
+    var CurrentFormUID=0;
+    //---------------------------------------------------------------------------
+    //---------------------------------------------------------------------------
+
+
+
+
+    //---------------------------------------------------------------------------
+    //---------------------------------------------------------------------------
 
     window.addEventListener('Init',function ()
     {
         if(SMART.Num===7)
             TESTMODE=1;
+
         CheckArr();
         LoadValues();
+        CalcSecret();
+
         SmartGetInfo();
         PrepareSavingItems();
+        UpdateOrderList(1,1);
+
+        GetConfTera();
+        //GetCommonEth();
+
     });
     window.addEventListener('UpdateInfo',function ()
     {
@@ -39,17 +73,23 @@
             SetError(Data);
         }
         else
-        if(Data.From===idFrom.value)
+        if(Data.cmd==="AddOrder")
         {
-            if(Data.cmd==="AddOrder" && !TESTMODE)
+            delete MapPending[Data.UID];
+            if(Data.UID===CurrentFormUID && idDescription.value!=="-")
                 ClearSend();
         }
+
         var Str;
         if(typeof Data==="object")
             Str=JSON.stringify(Data,"",4)
         else
             Str=Data;
         idLogs.value=Str+"\n-------\n"+idLogs.value;
+        //console.log(Data);
+
+        UpdateTeraCache(Data);
+
     });
 
     function CheckArr()
@@ -73,83 +113,165 @@
 
         SetVisibleBlock("mOwner",bOwner);
 
-        FillSelect("idFrom",Arr);
+        FillSelect("idAddrTera",Arr);
     }
 
-    //--------------------------------------------------------------------------- ETH Send
-    const onClickConnect = async function()
+    function Round(Sum)
     {
-        try
-        {
-            var res=await ethereum.request({ method: 'eth_requestAccounts' });
-            SetVisibleBlock("idConnect",0);
-        }
-        catch (error)
-        {
-            console.error(error);
-        }
-    };
-    function Eth16(Sum)
-    {
-        return (Math.floor(Sum*1000000000000000000)).toString(16);
-    }
-    function GasPrise()
-    {
-        return ethereum.request({ method: 'eth_gasPrice',params:[] });
-    }
-
-    function SendIDToEth(ID)
-    {
-        for(var i=0;i<OrderArr.length;i++)
-        {
-            var Order=OrderArr[i];
-            if(Order.ID===ID)
-            {
-                return SendOrderToEth(Order);
-            }
-        }
-        return SetError("Error order ID");
+        return Math.floor(Sum*1e9)/1e9;
     }
 
 
-    async  function SendOrderToEth(Order)
+
+    //--------------------------------------------------------------------------- ETH Coin
+    async function AddCoin()
     {
-        const Params = {
-            nonce: '0x00',
+        var tokenAddress=await CallEth("Token");
+        if(!tokenAddress)
+            return;
 
-            gasPrice: await GasPrise(),
-            gas: Eth16(1000000/1000000000000000000),
-
-            to: glInfo.EthSmartAddr,
-            from: await ethereum.GetSelectedAddress(),
-            //from: ethereum.selectedAddress,
-
-            value: 0,
-            data: '0x00FFEEDDCCAA',
-        };
+        const tokenSymbol = 'TERA';
+        const tokenDecimals = 9;
+        const tokenImage = 'https://terawallet.org/tera.ico';
 
 
-        try
-        {
-            // txHash is a hex string
-            // As with any RPC call, it may throw an error
-            const txHash = await ethereum.request({
-                method: 'eth_sendTransaction',
-                params: [Params],
+
+        try {
+            // wasAdded is a boolean. Like any RPC method, an error may be thrown.
+            const wasAdded = await ethereum.request({
+                method: 'wallet_watchAsset',
+                params: {
+                    type: 'ERC20', // Initially only supports ERC20, but eventually more!
+                    options: {
+                        address: tokenAddress, // The address that the token is at.
+                        symbol: tokenSymbol, // A ticker symbol or shorthand, up to 5 chars.
+                        decimals: tokenDecimals, // The number of decimals in the token
+                        image: tokenImage, // A string url of the token logo
+                    },
+                },
             });
         }
         catch (error)
         {
             console.log(error);
-            SetError(error.message);
         }
-
     }
 
-    //--------------------------------------------------------------------------- Send
-    function SendCoins()
+    //--------------------------------------------------------------------------- ETH Send
+
+    function FindOrderByID(ID)
     {
-        ["idFrom","idTo","idAmount"].forEach(function(id)
+        if(ID)
+            for(var i=0;i<OrderArr.length;i++)
+            {
+                var Order=OrderArr[i];
+                if(Order.ID===ID)
+                {
+                    return Order;
+                }
+            }
+        return SetError("Error order ID");
+    }
+
+    async function SendIDToEth(ID,btn)
+    {
+        btn.disabled = true;
+
+        var Order=FindOrderByID(ID);
+        if(Order)
+        {
+            try
+            {
+                var Ret=await SendExecOrderEth(Order);
+                console.log(Ret);
+            }
+            catch(e){};
+        }
+    }
+
+
+    async function SendExecOrderEth(Order)
+    {
+        var Conf=await GetConfTera();
+        if(!Conf || !Conf.NOTARY || !Conf.NOTARY.MinSign)
+            return SetError("Error Tera Conf");
+
+        SendEthMap[Order.ID]=1;
+        var Buf=[];
+        EncodeOrder(Buf,Order,1,Conf.NOTARY.MinSign);
+        console.log("ETH Length:",Buf.length,ToBytes(Buf));
+        return SendEth("ExecOrder",ToBytes(Buf));
+    }
+
+
+
+    function SendIDToSlash(ID,btn)
+    {
+        btn.disabled = true;
+
+        var Order=FindOrderByID(ID);
+        if(Order && OLib.ConfTera)
+        {
+            var Order2=CopyObjKeys({},Order);
+            delete Order2.SignArr;
+            for(var i=0;i<Order.SignArr.length;i++)
+            {
+                var Item=Order.SignArr[i];
+                if(!Item.Slash)
+                {
+                    Order2.Notary=Item.Notary;
+                    MSendCall(OLib.ConfTera.NotarySmartAcc,"SlashProof",Order2,Item.Sign,0);
+                }
+            }
+        }
+    }
+    async function SendIDToRefund(ID,btn)
+    {
+        btn.disabled = true;
+
+        var Order=FindOrderByID(ID);
+        if(Order && OLib.ConfTera)
+        {
+            if(Order.Mode==1)
+                MSendCall(OLib.ConfTera.NotarySmartAcc,"CancelOrder",{ID:Order.ID},[],0);
+            else
+            {
+                var Ret=await SendEth("CancelOrder",ID);
+                console.log(Ret);
+                delete OLib.MAP_ETH[ID];
+            }
+        }
+    }
+
+    async function SendIDToSign(ID,btn)
+    {
+        btn.disabled = true;
+
+        var Order=FindOrderByID(ID);
+        if(Order && OLib.ConfTera)
+        {
+            if(Order.Mode==2)
+            {
+
+                var SignStr=GetHexFromArr(GetSignOrder(Order,glPrivKey));
+                var StrR=SignStr.substr(0,32*2);
+                var StrS=SignStr.substr(32*2,32*2);
+                var StrV=SignStr.substr(64*2,2);
+
+                console.log(StrR,StrS,StrV);
+
+                var Ret=await SendEth("NotarySign",ID,0,ToBytes(StrR),ToBytes(StrS),ToBytes(StrV));
+                console.log(Ret);
+                delete OLib.MAP_ETH[ID];
+            }
+        }
+    }
+
+
+    //--------------------------------------------------------------------------- TERA Send
+    async function SendCoins()
+    {
+        await ["idMode","idAddrTera","idAddrEth","idAmount"].forEach(function(id)
         {
             if(!$(id).value)
             {
@@ -159,36 +281,104 @@
 
         });
 
-        SmartGetInfo(function(Info)
+        var Conf=await GetConfTera();
+
+        if(!Conf.NOTARY.NotaryArr)
+            return SetError("Error Notary dapp params");
+
+        let Order=FormToOrder(Conf);
+        if(!Order)
+            return;
+        var option=idMode.options[Order.Mode-1];
+        DoConfirm("Send "+option.innerText,CreateSendHTML(Order),async function()
         {
-            let Params=
-                {
-                    From:idFrom.value,
-                    To:idTo.value,
-                    Amount:+idAmount.value,
-                    Description:idDescription.value,
-                }
+            SelectTabMenu("mMonitor");
+            SelectTabMenu("mMy");
+            SetMonitorMode("MY");
 
-            var NeedFee=Info.NOTARY.Fee?Info.NOTARY.Fee*Params.Amount:0;
-            Params.Fee=Math.max(NeedFee,Info.NOTARY.MinFee);
+            glSendNum++;
+            let UID=Order.AddrTera*1000+(glSendNum%1000);
+            Order.UID=UID;
+            CurrentFormUID=Order.UID;
 
-            DoConfirm("Send "+idMode.innerText,CreateSendHTML(Params),function()
+            Order.ID=GetCurrentBlockNumByTime()*1000;
+            Order.Pending=1;
+            Order.SignArr=[];
+            MapPending[Order.UID]=Order;
+
+            UpdateOrderList(1);
+
+            if(Order.Mode==2)//Mode Eth to Tera
             {
-                MSendCall(+idFrom.value,"SendOrder",Params,[],+idFrom.value);
-            });
-        })
+                try
+                {
+                    var RetSend=await SendAddOrderEth(Order);
+                    console.log(RetSend);
+                }
+                catch(e){};
+
+                delete MapPending[UID];
+            }
+            else
+            {
+                if(!MSendCall(+idAddrTera.value,"SendOrder",Order,[],+idAddrTera.value))
+                    return;
+            }
+        });
     }
-    function CreateSendHTML(Params)
+    function DoConfirm3(a,b,F)
     {
+        F();
+    }
+
+
+    function FormToOrder(Conf)
+    {
+        if(!Conf)
+            Conf=OLib.ConfTera;
+        if(!Conf)
+            return;
+
+        var NOTARY=Conf.NOTARY;
+
+        var Order=
+            {
+                Mode:+idMode.value,
+                AddrTera:+idAddrTera.value,
+                AddrEth:idAddrEth.value,
+                Amount:Round(+idAmount.value),
+                TransferFee:Round(+idTransferFee.value),
+                Description:idDescription.value,
+            }
+
+        Order.AddrEth=ToBytes(Order.AddrEth).substr(2);
+        Order.NotaryFee=0;
+        if(Order.Mode==1)
+        {
+            var NeedFee=NOTARY.Rate*NOTARY.NotaryFee*(Order.Amount+Order.TransferFee);
+            Order.NotaryFee=Round(Math.max(NeedFee,NOTARY.MinNotaryFee));
+        }
+        return  Order;
+    }
+
+    function CreateSendHTML(Order)
+    {
+        var Arr=[];
+        Arr[(Order.Mode+1)%2]=Order.AddrTera;
+        Arr[(Order.Mode)%2]=Order.AddrEth;
+
+        var TokenName=CurrencyName(USER_ACCOUNT_MAP[Order.AddrTera].Currency);
+
         var Str=`
         <DIV align='left'>
         <hr>
-        <txtr><txth>From:</txth><txtv>${Params.From}</txtv></txtr>
-        <txtr><txth>To:</txth><txtshort>${Params.To}</txtshort></txtr>
-        <txtr><txth>Amount:</txth><txtvo>${Params.Amount}</txtvo><txth>Fee:</txth><txtvo>${Params.Fee}</txtvo></txtr>
-        <txtr><txth>Description:</txth><txtv>${Params.Description}</txtv></txtr>
+        <txtr><txth>From:</txth><txtshort>${Arr[0]}</txtshort></txtr>
+        <txtr><txth>To:</txth><txtshort>${Arr[1]}</txtshort></txtr>
+        <txtr><txth>Amount:</txth><txtvo>${Order.Amount}</txtvo>
+        <txthfee class="${Order.Mode==2?'hide':''}">Transfer:<txtvo>${Order.TransferFee}</txtvo>Notary:<txtvo>${Order.NotaryFee}</txtvo></txthfee></txtr>
+        <txtr><txth>Description:</txth><txtv>${Order.Description}</txtv></txtr>
         <hr>
-        <txtr><txth>TOTAL:</txth><txtvo>${Params.Amount+Params.Fee}</txtvo>TERA</txtr>
+        <txtr><txth>TOTAL:</txth><txtvo>${Round(Order.Amount+Order.NotaryFee+Order.TransferFee)}</txtvo>${TokenName}</txtr>
 
         </DIV>`
 
@@ -197,14 +387,14 @@
 
     function ClearSend()
     {
-        ["idFrom","idTo","idAmount","idDescription"].forEach(id => $(id).value="");
+        ["idAddrTera","idAddrEth","idAmount","idTransferFee","idDescription"].forEach(id => $(id).value="");
     }
 
-    //--------------------------------------------------------------------------- Process orders
+    //--------------------------------------------------------------------------- Process Tera orders
 
     function IsMyOrder(Order)
     {
-        if(USER_ACCOUNT_MAP[Order.From] || USER_ACCOUNT_MAP[Order.To] || TESTMODE)
+        if(USER_ACCOUNT_MAP[Order.AddrTera] || USER_ACCOUNT_MAP[Order.AddrEth] || TESTMODE)
             return 1;
         else
             return 0;
@@ -212,92 +402,329 @@
 
     function GetShortAddr(Addr)
     {
+        if(Addr.substr(0,2)==="0x")
+            Addr=Addr.substr(2);
         return Addr.substr(0,4)+"..."+Addr.substr(Addr.length-4);
     }
-    function GetStateOrder(Item)
+    function GetViewOrder(Item)
     {
-        if(Item.Process===1)
-            return "Signed";
-        return Item.Period;
+        var Str=GetShortAddr(Item.AddrEth);
+        return "<a class='olink' target='_blank' onclick='ViewOrder(" + Item.ID + ")'>" + Str + "</a>";
     }
+    function GetDirectOrder(Item)
+    {
+        if(Item.Mode==2)
+            return '<span class="orange">←<span>';
+        else
+            return '<span class="green">→<span>';
+
+    }
+    function Short8(Value)
+    {
+        if(!Value)
+            return "-";
+        return Value.substr(0,8);
+    }
+    function ViewOrder(ID)
+    {
+        var Order=FindOrderByID(ID);
+        if(Order)
+        {
+            console.log(Order);
+        }
+    }
+
+    function SetStateOrder(Item)
+    {
+        SetOrderPeriod(Item);
+        Item.Err=0;
+        if(!Item.Mode)
+            Item.Mode=1;
+
+        if(Item.PeriodNum>=4)
+        {
+            Item.State=Item.Period;
+        }
+        else
+        {
+            if(Item.Mode==1)
+                SetStateOrder1(Item);
+            else
+                SetStateOrder2(Item);
+        }
+    }
+
+    function SetStateOrder1(Item)
+    {
+
+        if(Item.HashEth && Item.HashTera!==Item.HashEth)
+            Item.Err=1;
+
+        if(Item.InEth)
+        {
+
+            if(Item.Err)
+            {
+                if(Item.Process!==200 && Item.PeriodNum>1 && Item.PeriodNum<=3)
+                    Item.State="ToSlash";
+                else
+                    Item.State=Item.Period;
+            }
+
+            if(!Item.Err)
+            {
+                Item.State="Transferred";
+                Item.Final=1;
+            }
+        }
+        else
+        {
+            if(Item.Pending)
+                Item.State="Pending";
+            else
+            if(Item.Process===1 && Item.InEth!==null)
+                Item.State="ToEth";
+            else
+            if(Item.Process===0 && Item.PeriodNum>=3)//Checking
+                Item.State="ToRefund";
+            else
+            if(Item.Process===100)
+            {
+                Item.State="Refunded";
+                Item.Final=1;
+            }
+            else
+                Item.State=Item.Period;
+        }
+    }
+
+    function SetStateOrder2(Item)
+    {
+
+        if(Item.HashTera && Item.HashTera!==Item.HashEth)
+            Item.Err=1;
+
+        if(Item.InTera)
+        {
+
+            if(Item.Err)
+            {
+                if(Item.Process!==200 && Item.PeriodNum>1 && Item.PeriodNum<=3)
+                    Item.State="ToSlash";
+                else
+                    Item.State=Item.Period;
+            }
+
+            if(!Item.Err)
+            {
+                Item.State="Transferred";
+                Item.Final=1;
+            }
+        }
+        else
+        {
+            if(Item.Pending)
+                Item.State="Pending";
+            else
+            if(Item.Process===0 && Item.PeriodNum===2)
+                Item.State="ToSign";
+            else
+            if(Item.Process===1)
+                Item.State="ToTera";
+            else
+            if(Item.Process===0 && Item.PeriodNum>=3)//Checking
+                Item.State="ToRefund";
+            else
+            if(Item.Process===100)
+            {
+                Item.State="Refunded";
+                Item.Final=1;
+            }
+            else
+                Item.State=Item.Period;
+        }
+    }
+
     function GetBtActOrder(Item)
     {
         //Process
         var Str="-";
-        if(Item.Process===1)
+        if(Item.State==="ToEth" && OLib.WasMetaMaskInstalled)
         {
-            Str='<button class="bteth" onclick="SendIDToEth('+Item.ID+')">To Eth</button>';
+            var color="green";
+            if(SendEthMap[Item.ID])
+                color="gray";
+            Str='<button class="btaction '+color+'" onclick="SendIDToEth('+Item.ID+',this)">Send</button>';
         }
+        else
+        if(Item.State==="ToSlash" && Item.PeriodNum>=3)
+            Str='<button class="btaction red" onclick="SendIDToSlash('+Item.ID+',this)">Slash</button>';
+        else
+        if(Item.State==="ToRefund")
+            Str='<button class="btaction orange" onclick="SendIDToRefund('+Item.ID+',this)">Refund</button>';
+        else
+        if(Item.State==="ToSign")
+            Str='<button class="btaction green" onclick="SendIDToSign('+Item.ID+',this)">Sign</button>';
+
+        return Str;
+    }
+    function ColoredAmount(Item)
+    {
+        var Str=Item.Amount;
+        if(Item.Err)
+            Str="<span class='red'>"+Str+"</span>"
         return Str;
     }
 
 
 
+
     //--------------------------------------------------------------------------- List orders
-    function UpdateOrderList()
+    async function UpdateOrderList(OnlyTera,bInit)
     {
-        SmartGetInfo(function()
+        if(bInit && TESTMODE)
         {
-            LoadOrderNext(glInfo.NOTARY.NextID,function(Arr)
+            SmartGetEmpty();
+            SmartSetInfo()
+        }
+
+        var Map={};
+
+        //Pending
+        for(var UID in MapPending)
+        {
+            var Order=MapPending[UID];
+            Map[Order.ID]=Order;
+        }
+
+
+        var Arr=await GetOrderListTera(0);
+        for(var i=0;i<Arr.length;i++)
+        {
+            var Order=Arr[i];
+            Order.InTera=1;
+            Order.HashTera=GetHexFromArr(GetOrderHash(Order));
+            if(!Order.InEth)
+                Order.InEth=(bInit)?null:0;
+            Map[Order.ID]=Order;
+        }
+
+        Arr=await GetOrderListTera(1);
+        for(var i=0;i<Arr.length;i++)
+        {
+            var Order=Arr[i];
+            Order.InTera=1;
+            if(!Map[Order.ID])
             {
-                OrderArr=Arr;
-                //console.log(Arr);
-                SetGridData(Arr,"idOrders");
-            })
-        });
+                Order.HashTera=GetHexFromArr(GetOrderHash(Order));
+                Map[Order.ID]=Order;
+            }
+        }
+
+        //Eth
+        if(!OnlyTera)
+        {
+            for(var Mode=1;Mode<=2;Mode++)
+            {
+                Arr=await GetOrderListEth(Mode);
+                for(var i=0;i<Arr.length;i++)
+                {
+                    var Order;
+                    var OrderEth=Arr[i];
+                    OrderEth.Mode=Mode;
+                    var Order=Map[OrderEth.ID];
+                    if(!Order)
+                    {
+                        Map[OrderEth.ID]=OrderEth;
+                        Order=OrderEth;
+                    }
+                    SetAttrEthOrder(Order,OrderEth);
+                }
+            }
+        }
+        Arr=[];
+        for(var ID in Map)
+        {
+            var Order=Map[ID];
+            Order.Num=Order.ID;
+
+            SetStateOrder(Order);
+
+            Arr.push(Order);
+        }
+
+        Arr.sort(function(a,b){return a.ID-b.ID;})
+
+
+        OrderArr=Arr;
+        ViewMonitor();
+
     }
-    function LoadOrderNext(ID,F,Arr)
+    async function SetAttrEthOrder(Order,OrderEth)
     {
-        if(!Arr)
-            Arr=[];
+        Order.InEth=1;
+        Order.HashEth=GetHexFromArr(GetOrderHash(OrderEth));
+        Order.EthNextID=OrderEth.NextID;
+        Order.EthPrevID=OrderEth.PrevID;
+        if(!OrderEth.NotaryFee)
+            OrderEth.NotaryFee=0;
 
-        if(!ID && F)
-            F(Arr);
+    }
 
-        if(!ID || !glInfo)
-            return;
 
-        MStaticCall(glInfo.NotarySmartAcc,"GetOrder",{ID:ID},[],function (Err,Order)
-        {
-            if(Err)
-                SetError(Order);
 
-            if(Err || !Order)
+
+
+    function ViewMonitor()
+    {
+        var Arr=[];
+        if(MonitorMode==="ALL")
+            Arr=OrderArr;
+        else
+            for(var i=0;i<OrderArr.length;i++)
             {
-                if(F)
-                    F(Arr);
-                return;
+                var Item=OrderArr[i];
+                if(Item.State===undefined)
+                    console.log(Item);
+                if(Item.PeriodNum>=4)
+                    continue;
+
+                // if(MonitorMode==="MY" && !Item.Final && IsMyOrder(Item))
+                //     Arr.push(Item);
+                // else
+                // if(MonitorMode==="MYFINISH" && Item.Final && IsMyOrder(Item))
+                //     Arr.push(Item);
+                if(MonitorMode==="MY" && IsMyOrder(Item))
+                    Arr.push(Item);
+                else
+                if(MonitorMode==="SLASH" && Item.State==="ToSlash")
+                    Arr.push(Item);
+                else
+                if(MonitorMode==="TOETH" && Item.State==="ToEth")
+                    Arr.push(Item);
+                else
+                if(MonitorMode==="TOTERA" && Item.State==="ToTera")
+                    Arr.push(Item);
+                else
+                if(MonitorMode==="REFUND" && Item.State==="ToRefund")
+                    Arr.push(Item);
+
+
             }
+        SetGridData(Arr,"idOrders",undefined,MonitorMode!==PrevMonitorMode,1);
+        PrevMonitorMode=MonitorMode;
+    }
 
-            if(IsMyOrder(Order))
-            {
-                Order.BlockNum=GetOrderBlockNum(Order);
+    function SetMonitorMode(Str)
+    {
+        MonitorMode=Str;
+        ViewMonitor();
+    }
 
-                if(Order.BlockNum+glInfo.NOTARY.TransferPeriod<INFO.CurBlockNum+WORK_DELTA)
-                {
-                    Order.Period="Clear";
-                }
-                else
-                if(Order.BlockNum+glInfo.NOTARY.SignPeriod<=INFO.CurBlockNum+WORK_DELTA)
-                {
-                    Order.Period="Slash";
-                }
-                else
-                if(Order.Process===0 && Order.BlockNum<=INFO.CurBlockNum-WORK_DELTA)
-                {
-                    Order.Period="Sign";
-                }
-                else
-                {
-                    Order.Period="Wait";
-                }
-
-                Arr.push(Order);
-                Order.Num=Arr.length;
-            }
-
-            LoadOrderNext(Order.NextID,F,Arr);
-        });
+    function SetEthCurAddres()
+    {
+        idAddrEth.value=OLib.EthAddrFrom;
+        SaveValues();
     }
 
     //--------------------------------------------------------------------------- Owner smart
@@ -306,18 +733,14 @@
         var Params=
             {
                 CommonNum:0,
-                EthSmartAddr:"1234500000000000000000000000000000000000",
-
-                TokenPoolAcc:0,
+                EthSmartAddr:"",
+                // TokenPoolAcc:0,
                 NotarySmartAcc:0,
-                NotaryArr:[{Name:"",Addr:"0000000000000000000000000000000000000000",CanSign:1}],
             };
         if(TESTMODE)
         {
             Params.NotarySmartAcc=602;
-            Params.Channel=606;
-            Params.Fee=0.01;
-            Params.MinFee=3;
+            Params.Channel=606;//652;
         }
         idList2.value=JSON.stringify(Params,"",4);
     }
@@ -333,89 +756,75 @@
 
 
 
-    function SmartGetInfo(F)
+    async function SmartGetInfo(bReset)
     {
-        if(!F)
-            idList2.value="";
-        var Num=+idAccGetInfo.value;
-        StaticCall(Num,"GetInfo",{},[],function (Err,Value)
+        OLibClearCahce();
+
+        var Conf=await GetConfTera();
+        idList2.value=JSON.stringify(Conf,"",4);
+    }
+
+    //---------------------------------------------------------------------------
+
+    function SetVisibleSendForm()
+    {
+        SetVisibleBlock("idBlockTrFee",idMode.value==1);
+    }
+
+    //--------------------------------------------------------------------------- Private key support
+    function SetPubKey()
+    {
+        glPubKey=SignLib.publicKeyCreate(glPrivKey, 0);
+        glAddr=GetHexFromArr(GetAddrFromPubKey(glPubKey));
+        idPubKey.value=glAddr;
+        SaveValues();
+    }
+
+    function CalcSecret()
+    {
+        idPrivKey.value=idPrivKey.value.trim();
+        if(idPrivKey.value)
         {
-            if(Err || !Value)
-            {
-                if(Err)
-                    SetError(Value);
-                return;
-            }
-
-            glInfo=Value;
-            if(glInfo.NotarySmartAcc)
-                MStaticCall(glInfo.NotarySmartAcc,"GetChannel",{Channel:glInfo.Channel?glInfo.Channel:SMART.Account},[],function (Err,Value)
-                {
-                    if(Err || !Value)
-                    {
-                        if(Err)
-                            SetError(Value);
-                        return;
-                    }
-
-                    glInfo.NOTARY=Value;
-                    glInfo.Fee=Value.Fee;
-                    if(F)
-                        return F(glInfo);
-
-                    idList2.value=JSON.stringify(glInfo,"",4);
-                });
-            else
-            if(!F)
-                idList2.value=JSON.stringify(glInfo,"",4);
-        });
-
-    }
-
-
-
-
-    //--------------------------------------------------------------------------- common smart-contract lib
-
-    function GetOrderBlockNum(Order)
-    {
-        return Math.floor(Order.ID/1000);
-    }
-
-    //--------------------------------------------------------------------------- Proxy support
-    function MSendCall(To,Name,Params,ParamsArr,From)
-    {
-        if(typeof Params!=="object")
-            return SetError("Error call "+Name);
-        Params.cmd=Name;
-        if(TESTMODE)
-            return SendCall(To,Name,Params,ParamsArr,From);
+            glPrivKey=GetArrFromHex(idPrivKey.value);
+            SetPubKey();
+        }
         else
-            return SendCall(To,"Call",Params,ParamsArr,From);
+        {
+            var PubKey=[2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2];
+
+            ComputeSecret(PubKey,function (ArrSecret)
+            {
+                glPrivKey=ArrSecret;
+                SetPubKey();
+            },+idAddrTera.value);
+        }
+
     }
-    function MStaticCall(To,Name,Params,ParamsArr,F)
+    function ShowPrivKey()
     {
-        if(typeof Params!=="object")
-            return SetError("Error call "+Name);
-        Params.cmd=Name;
-        // if(TESTMODE)
-        //     return StaticCall(To,Name,Params,ParamsArr,F);
-        // else
-        return StaticCall(To,"Call",Params,ParamsArr,F);
+        idPrivKey.value=GetHexFromArr(glPrivKey);
+        SetPubKey();
 
+
+        SetVisibleBlock("idPrivKey",1);
+        setTimeout(function()
+        {
+            SetVisibleBlock("idPrivKey",0);
+        },10*1000);
     }
-
 
     //--------------------------------------------------------------------------- Saving support
     function SaveValues()
     {
+        CurrentFormUID=0;
         SaveToStorageByArr(SaveIdArr);
     }
     function LoadValues()
     {
         LoadFromStorageByArr(SaveIdArr,function (Key)
         {
-
+            SetVisibleSendForm();
+            CalcSecret();
         },1);
     }
     function PrepareSavingItems()
@@ -453,16 +862,28 @@
         background-color: #2E3857;
         border: 1px solid #888;
     }
+    button[disabled]
+    {
+        color: gray;
+        cursor:none;
+    }
 
     button:hover
     {
         color: #cb763a;
         cursor: pointer;
     }
-    .bteth
+    button[disabled]:hover
     {
-        width: 50px;
+        color: gray;
+        cursor:none;
+    }
+    .btaction
+    {
+        width: 70px;
         padding:0;
+        margin:0;
+        height:26px;
     }
     .btlist
     {
@@ -486,14 +907,25 @@
     {
         background-color2: #CCC;
         margin: 2px;
+        padding:0px;
         height:30px;
         width:99%;
     }
-    #idAmount
+    .amount
     {
-        color2:#E9764B;
         color:#1e21cb;
         font-weight: bold;
+    }
+    .raw2
+    {
+        display: flex;
+        margin: 10px 5px;
+        font-size: 16px;
+    }
+    .rawtr
+    {
+        width: 30%;
+        margin: auto;
     }
 
     txtr
@@ -507,6 +939,12 @@
     {
         font-weight: bold;
     }
+    txthfee
+    {
+        font-weight: normal;
+        font-size: 12px;
+    }
+
     txtv
     {
         margin-left: 5px;
@@ -536,10 +974,75 @@
         width:200px;
     }
 
+    .hide
+    {
+        display: none;
+    }
+
+
+    /*Списки*/
+    table
+    {
+        border-collapse: collapse;
+        width:100%;
+        max-width: 800px;
+        margin-top:5px;
+
+    }
+    .grid th
+    {
+        color2:lightgray;
+    }
+
+    .grid th, .grid td
+    {
+        border: 1px solid #576B83;
+        padding: 4px;
+    }
+    .grid td
+    {
+        color:lightgray;
+        width: 60px;
+        vertical-align:top;
+    }
+
+    .red
+    {
+        color:red;
+    }
+    .green
+    {
+        color:lightgreen;
+    }
+    .orange
+    {
+        color:orange;
+    }
+    .gray
+    {
+        color: gray;
+    }
+
+    td.desc
+    {
+        max-width: 150px;
+        text-align: left;
+        word-break: break-all;
+        overflow:auto;
+    }
+
+    .set
+    {
+        width: 18px;
+        border:0;
+        padding:0;
+        margin:0;
+    }
+
 </style>
 
 <div align="center" style="width:98%">
-    <div align="left" style="max-width:400px">
+    <div align="left" style="max-width:800px">
 
         <div align='center' id="idMain" style="display:none">
 
@@ -569,50 +1072,108 @@
 
             <content data-ref="mInfo">
 
-                Common TERA-ETH Bridge information
+                <!--Common TERA-ETH Bridge information-->
+
+                <button style="width:150px" onclick="AddCoin()">Link Tera to Metamask</button>
 
             </content>
 
             <content data-ref="mMonitor">
-                <button id="idConnect" onclick="onClickConnect()"><img src="https://metamask.io/images/mm-logo.svg"></button>
-                <hr>
+
+
+                <menu  style="max-width:600px">
+                    <item onclick="SetMonitorMode('MY')" id="mMy">
+                        MY
+                    </item>
+                    <!--<item onclick="SetMonitorMode('MYFINISH')">-->
+                    <!--    FINISH-->
+                    <!--</item>-->
+                    <item onclick="SetMonitorMode('ALL')">
+                        ALL
+                    </item>
+                    <item onclick="SetMonitorMode('TOTERA')">
+                        TO TERA
+                    </item>
+                    <item onclick="SetMonitorMode('TOETH')">
+                        TO ETH
+                    </item>
+
+                    <item onclick="SetMonitorMode('REFUND')">
+                        REFUND
+                    </item>
+                    <item onclick="SetMonitorMode('SLASH')">
+                        SLASH
+                    </item>
+
+                </menu>
+
+
                 <table id="idOrders" class="grid">
                     <tr>
-                        <th id="Item.ID" class="id">ID</th>
-                        <th id="Item.From" class="">From</th>
-                        <th id="GetShortAddr(Item.To)" class="">To</th>
-                        <th id="Item.Amount" class="sum bold">Amount</th>
-                        <!--<th id="Item.Description" class="desc">Description</th>-->
-                        <th id="(GetStateOrder(Item))">State</th>
                         <th id="(GetBtActOrder(Item))">Action</th>
+                        <th id="Item.State">State</th>
+                        <th id="(ColoredAmount(Item))" class="sum bold">Amount</th>
+                        <!--<th id="Item.Channel">Channel</th>-->
+                        <th id="Item.NotaryFee" class="sum bold">Fee Notary</th>
+                        <th id="Item.TransferFee" class="sum bold">Fee Transfer</th>
+                        <th id="Item.AddrTera" class="">Addr Tera</th>
+                        <th id="(GetDirectOrder(Item))" class="">↔</th>
+                        <th id="(GetViewOrder(Item))" class="">Addr Eth</th>
+                        <th id="Item.Description" class="desc">Description</th>
+                        <th id="Item.SignArr.length" class="">Notary signs</th>
+
+                        <!--<th id="Short8(Item.HashTera)" class="hash">Tera</th>-->
+                        <!--<th id="Short8(Item.HashEth)" class="hash">Eth</th>-->
+                        <th id="Item.ID" class="id">ID</th>
+                        <!--<th id="Item.NextID" class="id">Next</th>-->
+                        <!--<th id="Item.EthPrevID!==undefined?Item.EthPrevID:'-'" class="id">Eth Prev</th>-->
+                        <!--<th id="Item.EthNextID!==undefined?Item.EthNextID:'-'" class="id">Eth Next</th>-->
+
+                        <th id="Item.InTera?1:0">Tera</th>
+                        <th id="Item.InEth===null?'-':Item.InEth?Item.InEth:0">Eth</th>
+                        <th id="Item.PeriodNum">Period</th>
+                        <!--<th id="Item.Process">Process</th>-->
                     </tr>
                 </table>
 
+
             </content>
 
-            <content data-ref="mSend">
+            <content data-ref="mSend" style="max-width:400px">
                 <div align="left">
                     <div class="raw">
                         <div class="raw-head">Bridge mode:</div>
-                        <select size="1" id="idMode" class="raw-item" style="width: 120px">
-                            <option value="Send">TERA->ETH</option>
-                            <!--<option value="Get">ETH->TERA</option>-->
+                        <select size="1" id="idMode" class="raw-item" style="width: 120px" onchange="SetVisibleSendForm()">
+                            <option value="1">TERA → ETH</option>
+                            <option value="2">ETH  → TERA</option>
                         </select>
                     </div>
                     <div class="raw">
-                        <div class="raw-head">From:</div>
-                        <select size="1" id="idFrom" class="raw-item">
+                        <div class="raw-head">Address Tera:</div>
+                        <select size="1" id="idAddrTera" class="raw-item" style="width:100%;">
                             <option value="0">Loading...</option>
                         </select>
                     </div>
                     <div class="raw">
-                        <div class="raw-head">To:</div>
-                        <input type="string" id="idTo" class="raw-item" style="font-size: 12px;">
+                        <div class="raw-head">Address Eth:
+                            <button onclick="SetEthCurAddres()" class="set">
+                                <img src="./img/load.svg">
+                            </button>
+                        </div>
+
+                        <input type="string" id="idAddrEth" class="raw-item">
                     </div>
-                    <div class="raw">
-                        <div class="raw-head">Amount:</div>
-                        <input type="number" id="idAmount" class="raw-item" style="text-align:right;">
+                    <div class="raw2">
+                        <div class="raw">
+                            <div class="raw-head">Amount:</div>
+                            <input type="number" id="idAmount" class="raw-item amount" style="text-align:right;">
+                        </div>
+                        <div id="idBlockTrFee" class="raw rawtr">
+                            <div class="raw-head">Transfer fee:</div>
+                            <input type="number" id="idTransferFee" class="raw-item amount" style="text-align:right;">
+                        </div>
                     </div>
+
                     <div class="raw">
                         <div class="raw-head">Description:</div>
                         <TEXTAREA id="idDescription" rows="2" cols="30" class="raw-item"></TEXTAREA>
@@ -632,7 +1193,9 @@
                     <item data-ref="sSmart">
                         SMART
                     </item>
-
+                    <item data-ref="sSign">
+                        SIGN
+                    </item>
                     <item data-ref="mLog" id="tlog">
                         Logs
                     </item>
@@ -653,6 +1216,17 @@
                     <button onclick="idLogs.value=null">Clear</button>
                     <TEXTAREA id="idLogs" rows="22" cols="40" style="width:99%"></TEXTAREA>
                 </content>
+
+                <content data-ref="sSign">
+                    Addr:
+                    <TEXTAREA id="idPubKey" rows="2" cols="40" style="width:99%"></TEXTAREA>
+                    Privat key:
+                    <TEXTAREA id="idPrivKey" rows="3" cols="40" style="display:none; width:99%" onchange="CalcSecret();"></TEXTAREA>
+                    <button onclick="CalcSecret()">Calc Secret</button>
+                    <button onclick="ShowPrivKey()">Show Secret</button>
+                    <button onclick="idPrivKey.value=null;CalcSecret()">Reset secret</button>
+                </content>
+
             </content>
 
 
@@ -660,12 +1234,6 @@
         </div>
     </div>
 </div>
-
-
-
-
-
-
 
 
 
