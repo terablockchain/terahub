@@ -87,7 +87,8 @@ contract OrderLib is NotaryLib
     function GetSignOrderHash(TypeOrder memory Order)  pure internal returns (bytes32)
     {
         bytes memory Buf=GetSignBufFromOrder(Order);
-        return sha256(Buf);
+        //return sha256(Buf);
+        return keccak256(Buf);
     }
 
 
@@ -172,10 +173,6 @@ contract OrderLib is NotaryLib
             require(Header==0,"Order was payed");
         }
 
-        Order.NextID=Conf.FirstOrderID;
-
-
-
         Order.BodyID=Order.ID;
 
         //используем BodyID последнего ордера в удаляемом периоде
@@ -201,6 +198,7 @@ contract OrderLib is NotaryLib
         }
 
 
+        Order.NextID=Conf.FirstOrderID;
         SaveOrder(Order);
 
 

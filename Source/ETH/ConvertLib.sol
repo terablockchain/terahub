@@ -101,6 +101,7 @@ contract ConvertLib is TypeLib
         {
             RetArr := mload(Data)
         }
+        //todo
     }
 
     function GetBytes10(uint Data)  internal pure returns (bytes10 RetArr)
@@ -109,6 +110,7 @@ contract ConvertLib is TypeLib
         {
             RetArr := mload(Data)
         }
+        //todo
     }
 
     function GetBytes(uint Data, uint16 size)  internal pure returns (bytes memory RetArr)
@@ -125,19 +127,27 @@ contract ConvertLib is TypeLib
 
     function Bytes32FromBytes(bytes memory Data)  internal pure returns (bytes32 RetArr)
     {
+        if(Data.length==0)
+            return 0;
+
         assembly
         {
             RetArr := mload(add(Data, 0x20))
         }
+        //todo
     }
 
 
     function UintFromBytes(bytes memory Data)  internal pure returns (uint RetArr)
     {
+        if(Data.length==0)
+            return 0;
+
         assembly
         {
             RetArr := mload(add(Data, 0x20))
         }
+        //todo
     }
 
     function GetUint1(uint Data) internal pure returns (uint8 Num)

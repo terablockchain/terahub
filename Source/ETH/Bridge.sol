@@ -261,7 +261,7 @@ contract Bridge is  OrderLib, BridgeERC20
 
 
         //Save order
-        SaveNewOrder(ConfData1,Order,1);
+        SaveNewOrder(ConfData1,Order,1);//запись с обязательной проверкой уникальности ID
 
 
 
@@ -272,6 +272,8 @@ contract Bridge is  OrderLib, BridgeERC20
             uint TokenID=UintFromBytes(Order.TokenID);
             if(TokenID>0)
             {
+                require(TokenID==0,"TokenID not support");
+
                 //ERC721(NFT) mode
                 //Token.SmartMint(AddrEth, TokenID, Order.Description);
             }
