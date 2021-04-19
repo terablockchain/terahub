@@ -4,11 +4,11 @@
 pragma solidity ^0.7.3;
 
 
-import "./NotaryLib.sol";
+import "./OwnerLib.sol";
 
 
 
-contract OrderLib is NotaryLib
+contract OrderLib is OwnerLib
 {
     //------------------------------------------------------------------------ Time
 

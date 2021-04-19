@@ -4,27 +4,15 @@ pragma solidity ^0.7.3;
 
 
 
-import "./TypeLib.sol";
+import "./DataLib.sol";
 import "./ConvertLib.sol";
 
 
 //серилизация/десерилизация с хранилищем
 
-contract StorageLib is TypeLib, ConvertLib
+contract StorageLib is DataLib, ConvertLib
 {
-    address Owner;
-    TypeCommon internal ConfCommon;
-    TypeConf internal ConfData1;//TERA->ETH
-    TypeConf internal ConfData2;//ETH->TERA
 
-    //notary
-    mapping(uint8 => TypeNotary) public NotaryList;
-
-    //order list
-    //mapping(uint48 => bytes) OrderBufList;
-
-//    string public LogName;
-//    uint public LogValue;
     //------------------------------------------------------------------------ Conf
 
 

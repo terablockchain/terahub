@@ -3,6 +3,8 @@
 
 pragma solidity ^0.7.3;
 
+pragma experimental ABIEncoderV2;
+
 
 
 import "./OwnerLib.sol";
@@ -35,6 +37,10 @@ contract NotaryLib is OwnerLib
 
     }
 
+    function GetNotary(uint8 Num)public view returns(TypeNotary memory)
+    {
+        return NotaryList[Num];
+    }
 
 
 }

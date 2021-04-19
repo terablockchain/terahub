@@ -3,9 +3,9 @@
 pragma solidity ^0.7.3;
 
 
-import "./TypeLib.sol";
+import "./DataLib.sol";
 
-contract ConvertLib is TypeLib
+contract ConvertLib is DataLib
 {
     //------------------------------------------------------------------------
     //------------------------------------------------------------------------
@@ -21,6 +21,20 @@ contract ConvertLib is TypeLib
         }
 
         return tempAddress;
+    }
+
+    function RevertBytes(uint Data)  internal pure returns (uint Ret)
+    {
+        assembly
+        {
+            for { let i := 0 } lt(i, 32) { i := add(i, 1) }
+            {
+                Ret := mul(Ret,0x100)
+                Ret := or(Ret,and(Data,0xFF))
+
+                Data := div(Data,0x100)
+            }
+        }
     }
 
     function GetAddrFromBytes(bytes memory Addr) internal pure returns (address)
@@ -100,8 +114,8 @@ contract ConvertLib is TypeLib
         assembly
         {
             RetArr := mload(Data)
+            RetArr := and(RetArr, 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF000000000000000000000000)
         }
-        //todo
     }
 
     function GetBytes10(uint Data)  internal pure returns (bytes10 RetArr)
@@ -109,8 +123,8 @@ contract ConvertLib is TypeLib
         assembly
         {
             RetArr := mload(Data)
+            RetArr := and(RetArr, 0xFFFFFFFFFFFFFFFFFFFF00000000000000000000000000000000000000000000)
         }
-        //todo
     }
 
     function GetBytes(uint Data, uint16 size)  internal pure returns (bytes memory RetArr)
@@ -127,27 +141,29 @@ contract ConvertLib is TypeLib
 
     function Bytes32FromBytes(bytes memory Data)  internal pure returns (bytes32 RetArr)
     {
-        if(Data.length==0)
-            return 0;
+        uint ShrCount;
+        if(Data.length<32)
+            ShrCount=8*(32-Data.length);
 
         assembly
         {
             RetArr := mload(add(Data, 0x20))
+            RetArr := shr(ShrCount,RetArr)
         }
-        //todo
     }
 
 
     function UintFromBytes(bytes memory Data)  internal pure returns (uint RetArr)
     {
-        if(Data.length==0)
-            return 0;
+        uint ShrCount;
+        if(Data.length<32)
+            ShrCount=8*(32-Data.length);
 
         assembly
         {
             RetArr := mload(add(Data, 0x20))
+            RetArr := shr(ShrCount,RetArr)
         }
-        //todo
     }
 
     function GetUint1(uint Data) internal pure returns (uint8 Num)

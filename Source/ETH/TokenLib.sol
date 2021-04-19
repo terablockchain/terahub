@@ -8,9 +8,6 @@ import "./TokenERC20.sol";
 
 contract BridgeERC20 is OwnerLib
 {
-    TokenERC20 public Token;
-
-
     function SetTokenERC(address Addr) public OnlyOwner
     {
         if (Addr != address(0))
@@ -25,5 +22,10 @@ contract BridgeERC20 is OwnerLib
         {
             Token.SetSmart(Addr);
         }
+    }
+
+    function GetTokenERC() public view returns (TokenERC20)
+    {
+        return Token;
     }
 }

@@ -4,6 +4,10 @@ pragma solidity ^0.7.3;
 
 import "./TokenLib.sol";
 import "./OrderLib.sol";
+import "./NotaryLib.sol";
+
+import "./ProxyBridge.sol";
+
 
 pragma experimental ABIEncoderV2;
 
@@ -14,34 +18,35 @@ pragma experimental ABIEncoderV2;
  * @dev Bridge TERA-ETH
  */
 
-contract Bridge is  OrderLib, BridgeERC20
+
+contract Bridge is  OrderLib, BridgeERC20, NotaryLib
 {
     bytes32 constant ZeroSign32=hex"00112233445566778899aabbccddeeffff112233445566778899aabbccddeeff";
-    
-    //------------------------------------------------------------------------ 
-    constructor()
-    {
-        Owner = msg.sender;
 
 
-        ConfCommon.CONSENSUS_PERIOD_TIME = 3;
-        ConfCommon.FIRST_TIME_BLOCK = 1593818071;//const from TERA 1/1000        Main-net:1403426400     Test-net: 1593818071
+    //    constructor()
+    //    {
+    //        Owner = msg.sender;
+    //
+    //
+    //        ConfCommon.CONSENSUS_PERIOD_TIME = 3;
+    //        ConfCommon.FIRST_TIME_BLOCK = 1593818071;//const from TERA 1/1000        Main-net:1403426400     Test-net: 1593818071
+    //
+    //        ConfCommon.CHANNEL=606;//652 - tera dapp for testnet kovan, 606 - rinkeby
+    //        ConfCommon.MAX_SIGN_PERIOD=60;//24*3600/6;
+    //        ConfCommon.MAX_TRANSFER_PERIOD=120;//24*3600/3;
+    //        ConfCommon.MIN_SIGN_COUNT = 1;
+    //        ConfCommon.NOTARY_COUNT = 0;
+    //        ConfCommon.WORK_MODE = 1;
+    //        ConfCommon.RATE = 0.000008 * 1e9;
+    //        ConfCommon.MIN_NOTARY_FEE = 0.001 * 1e6;
+    //        ConfCommon.NOTARY_FEE = 0.01 * 1e3;
+    //
+    //        ConfCommon.MIN_DEPOSIT = 100;
+    //
+    //        SetNotary(0,hex"7D557BD835219FF838E06D2651BAB8F46791092E", 100*1e9, 1);
+    //    }
 
-        ConfCommon.CHANNEL=606;//652 - tera dapp for testnet kovan, 606 - rinkeby
-        ConfCommon.MAX_SIGN_PERIOD=60;//24*3600/6;
-        ConfCommon.MAX_TRANSFER_PERIOD=120;//24*3600/3;
-        ConfCommon.MIN_SIGN_COUNT = 1;
-        ConfCommon.NOTARY_COUNT = 0;
-        ConfCommon.WORK_MODE = 1;
-        ConfCommon.RATE = 0.000008 * 1e9;
-        ConfCommon.MIN_NOTARY_FEE = 0.001 * 1e6;
-        ConfCommon.NOTARY_FEE = 0.01 * 1e3;
-
-        ConfCommon.MIN_DEPOSIT = 100;
-
-        SetNotary(0,hex"7D557BD835219FF838E06D2651BAB8F46791092E", 100*1e9, 1);
-    }
-    
     //------------------------------------------------------------------------ETH->TERA
     function AddOrder(bytes memory Buf)  public payable
     {
@@ -320,7 +325,63 @@ contract Bridge is  OrderLib, BridgeERC20
     }
 
 
-
+//    function GetNotary(uint8 Num)public view returns(TypeNotary memory)
+//    {
+//        return NotaryList[Num];
+//    }
 
 }
+
+//
+//abstract contract  UpgradedBridge is StandartBridge
+//{
+//    // those methods are called by the legacy contract
+//    // and they must ensure msg.sender to be the contract address
+//
+//    function AddOrderByLegacy(bytes memory Buf)  public payable virtual;
+//}
+//
+//
+//contract Bridge is  StandartBridge
+//{
+//    address public upgradedAddress;
+//    bool public deprecated;
+//
+//    //------------------------------------------------------------------------
+//    constructor()
+//    {
+//        Owner = msg.sender;
+//
+//
+//        ConfCommon.CONSENSUS_PERIOD_TIME = 3;
+//        ConfCommon.FIRST_TIME_BLOCK = 1593818071;//const from TERA 1/1000        Main-net:1403426400     Test-net: 1593818071
+//
+//        ConfCommon.CHANNEL=606;//652 - tera dapp for testnet kovan, 606 - rinkeby
+//        ConfCommon.MAX_SIGN_PERIOD=60;//24*3600/6;
+//        ConfCommon.MAX_TRANSFER_PERIOD=120;//24*3600/3;
+//        ConfCommon.MIN_SIGN_COUNT = 1;
+//        ConfCommon.NOTARY_COUNT = 0;
+//        ConfCommon.WORK_MODE = 1;
+//        ConfCommon.RATE = 0.000008 * 1e9;
+//        ConfCommon.MIN_NOTARY_FEE = 0.001 * 1e6;
+//        ConfCommon.NOTARY_FEE = 0.01 * 1e3;
+//
+//        ConfCommon.MIN_DEPOSIT = 100;
+//
+//        SetNotary(0,hex"7D557BD835219FF838E06D2651BAB8F46791092E", 100*1e9, 1);
+//    }
+//
+//    // Forward methods to upgraded contract if this one is deprecated
+//    function AddOrder(bytes memory Buf)  public payable override
+//    {
+//        if (deprecated)
+//        {
+//            return UpgradedBridge(upgradedAddress).AddOrderByLegacy(Buf);
+//        } else
+//        {
+//            return super.AddOrder(Buf);
+//        }
+//    }
+//
+//}
 
