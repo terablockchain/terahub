@@ -259,7 +259,7 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
         {
             TypeSigner memory Item=Order.SignArr[i];
             //require(Item.Notary!=Notary,"This notary sign was already there"); - так низзя
-            require(Item.SignV!=SignV && Item.SignR!=SignR,"This signature was already there");
+            require(Item.SignV!=SignV && Item.SignR!=SignR,"This signature was already there");//именно этот вариант, так как это еще неявная проверка одинаковости ордеров
 
             if(Item.Notary==0xFF)
             {
