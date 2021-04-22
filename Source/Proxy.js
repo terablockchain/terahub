@@ -1,5 +1,6 @@
 //Proxy smart contract for NotaryPool.js, Bridge.js and etc
 
+
 function OnGet()//getting coins
 {
     if(context.SmartMode)
@@ -62,8 +63,22 @@ function SetInfo(Params)
     if(context.FromNum!==context.Smart.Owner)
         throw "Access is only allowed from Owner account";
 
+
+    //---------------------
+    //developing mode check
+    var DEVELOPING_MODE_PERIOD=90*24*3600/3;
+    var Info=GetInfo(Params);
+    if(Info && Info.StartDeveloperMode)
+        if(context.BlockNum-Info.StartDeveloperMode > DEVELOPING_MODE_PERIOD)
+            throw "Smart contract in immutable mode";
+
+    Params.StartDeveloperMode=context.BlockNum;
+    //---------------------
+
+
     WriteStorage(Params);
 }
+
 "public"
 function GetInfo(Params)
 {

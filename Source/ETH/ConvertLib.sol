@@ -296,11 +296,11 @@ contract ConvertLib is DataLib
 
         uint MustMinLength=4+5+4+20 +2 +8+8+2;
 
-        if(SizeMode==BUF_EXTERN)
+        if(SizeMode==BUF_EXTERN_FULL)
             MustMinLength+= 1+66;
         if(SizeMode==BUF_STORE)
             MustMinLength+= 1+66 + 8;//+1;
-        //BUF_EXTERN2 - not add
+        //BUF_EXTERN_HEADER - not add
 
         require(Buf.length>=MustMinLength,"Error FillOrderBody Data length");
 
@@ -330,7 +330,7 @@ contract ConvertLib is DataLib
         size=GetUint2(BufPos);BufPos+=2;
         Order.Description=GetBytes(BufPos,size);BufPos+=size;
 
-        if(SizeMode==BUF_EXTERN2)//data from tx AddOrder
+        if(SizeMode==BUF_EXTERN_HEADER)//data from tx AddOrder
         {
             CheckBufPos(Buf,BufPos);
             return;
@@ -355,7 +355,7 @@ contract ConvertLib is DataLib
         }
 
 
-        if(SizeMode==BUF_EXTERN)//data from tx ExecOrder
+        if(SizeMode==BUF_EXTERN_FULL)//data from tx ExecOrder
         {
             CheckBufPos(Buf,BufPos);
             return;
@@ -391,7 +391,7 @@ contract ConvertLib is DataLib
         if(SizeMode>=BUF_STORE)
             Length+= 1 + size3*66 +  8;// + 1;
 
-        if(SizeMode==BUF_EXTERN)
+        if(SizeMode==BUF_EXTERN_FULL)
             Length+= 10 + 1;
 
 

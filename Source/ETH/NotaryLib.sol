@@ -22,7 +22,7 @@ contract NotaryLib is OwnerLib
         if(Notary==ConfCommon.NOTARY_COUNT)
             ConfCommon.NOTARY_COUNT++;
 
-        NotaryList[Notary]=TypeNotary({Notary:Notary,Addr:GetAddrFromBytes(Addr),CanSign:CanSign, Deposit:Deposit});
+        NotaryList[Notary]=TypeNotary({Notary:Notary,Addr:GetAddrFromBytes(Addr),CanSign:CanSign, SumDeposit:Deposit});
 
     }
 

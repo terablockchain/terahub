@@ -144,7 +144,7 @@ contract OrderLib is OwnerLib
         TypeOrder memory Order=LoadOrder(ID);
         if(Order.ID==0)
             return hex"";
-        return GetBufFromOrder(Order,BUF_EXTERN);
+        return GetBufFromOrder(Order,BUF_EXTERN_FULL);
     }
 
 

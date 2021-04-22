@@ -10,8 +10,8 @@ contract TypeLib
 
     uint constant BUF_SIGN    = 1;
     uint constant BUF_STORE   = 2;
-    uint constant BUF_EXTERN  = 3;
-    uint constant BUF_EXTERN2 = 4;
+    uint constant BUF_EXTERN_FULL  = 3;
+    uint constant BUF_EXTERN_HEADER = 4;
 
     struct TypeCommon
     {
@@ -24,12 +24,17 @@ contract TypeLib
         uint8 NOTARY_COUNT;
         uint8 MIN_SIGN_COUNT;
 
-        uint48 RATE;//курс монеты к eth (в полях Amount и TransferFee) с точностью 1e-9
-        uint24 MIN_NOTARY_FEE;//мин. комиссия с точностью 1e-6
-        uint16 NOTARY_FEE;//коэффициент нотариальной комисии с точностью 1e-3
+        uint48 Rate;//курс монеты к eth (в полях Amount и TransferFee) с точностью 1e-9
+        uint48 MinNotaryFee;//мин. комиссия с точностью 1e-9   //1e-6
+        uint48 NotaryFee;//коэффициент нотариальной комисии с точностью 1e-9  //1e-3
 
-        uint24 MIN_DEPOSIT;//мин депозит в целых монетых Eth
-        //32
+        uint48 MinDeposit;//мин депозит с точностью 1e-9   // в целых монетых Eth
+
+
+        uint16 SlashRate;//множитель слэшинга (тока целые множители)
+        uint48 MinSlash;//точность 1e-9
+
+        //32+3+4+3 + 2+6 = 32+18
     }
 
     struct TypeConf
@@ -48,7 +53,7 @@ contract TypeLib
         address Addr;
         uint8 CanSign;
 
-        uint64 Deposit;//депозит Eth с точнсостью до 1e9
+        uint64 SumDeposit;//депозит Eth с точнсостью до 1e9
     }
 
     struct TypeSigner
