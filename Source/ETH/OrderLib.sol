@@ -176,37 +176,37 @@ contract OrderLib is OwnerLib
         Order.BodyID=Order.ID;
 
         //используем BodyID последнего ордера в удаляемом периоде
-        if(Conf.LastOrderID>0)
+        if(Conf.TailOrderID>0)
         {
-            uint Period=OrderInPeriod(Conf.LastOrderID);
+            uint Period=OrderInPeriod(Conf.TailOrderID);
             if(Period>=4)
             {
-                uint HeaderLast=LoadHeaderBytes(Conf.LastOrderID);
+                uint HeaderLast=LoadHeaderBytes(Conf.TailOrderID);
 
                 require(HeaderLast>0,"Error read HeaderLast");
 
                 if(HeaderLast>0)
                 {
-                    SaveHeaderBytes(Conf.LastOrderID,0);//удаляем его
-                    if(Conf.FirstOrderID==Conf.LastOrderID)
-                        Conf.FirstOrderID=0;
+                    SaveHeaderBytes(Conf.TailOrderID,0);//удаляем его
+                    if(Conf.HeadOrderID==Conf.TailOrderID)
+                        Conf.HeadOrderID=0;
 
                     Order.BodyID=uint40((HeaderLast>>120) & 0xFFFFFFFFFF);//BodyID
-                    Conf.LastOrderID=uint40((HeaderLast>>200) & 0xFFFFFFFFFF);//PrevID
+                    Conf.TailOrderID=uint40((HeaderLast>>200) & 0xFFFFFFFFFF);//PrevID
                 }
             }
         }
 
 
-        Order.NextID=Conf.FirstOrderID;
+        Order.NextID=Conf.HeadOrderID;
         SaveOrder(Order);
 
 
         //записываем ссылку на этот ордер в предыдущем ордере
-        if(Conf.FirstOrderID>0)
+        if(Conf.HeadOrderID>0)
         {
-            uint HeaderFirst=LoadHeaderBytes(Conf.FirstOrderID);
-            require(HeaderFirst>0,"Error read FirstOrderID");
+            uint HeaderFirst=LoadHeaderBytes(Conf.HeadOrderID);
+            require(HeaderFirst>0,"Error read HeadOrderID");
 
             //обнуляем предыдущее значение PrevID - но вообще оно и так всегда пустое
             uint TemplatePrevID = 0xFFFFFFFFFF << 200;
@@ -215,12 +215,12 @@ contract OrderLib is OwnerLib
             //новая ссылка
             HeaderFirst = HeaderFirst |  (uint(Order.ID) << 200);
 
-            SaveHeaderBytes(Conf.FirstOrderID,HeaderFirst);
+            SaveHeaderBytes(Conf.HeadOrderID,HeaderFirst);
         }
 
-        Conf.FirstOrderID=Order.ID;
-        if(Conf.LastOrderID==0)
-            Conf.LastOrderID=Order.ID;
+        Conf.HeadOrderID=Order.ID;
+        if(Conf.TailOrderID==0)
+            Conf.TailOrderID=Order.ID;
 
 
     }

@@ -17,29 +17,6 @@ contract StorageLib is DataLib, ConvertLib
 
 
 
-//    function SaveConf(TypeConf memory Conf)internal
-//    {
-//        ConfData1=Conf;
-//        //ConfData=GetBufFromConf(Conf);
-//    }
-//    function LoadConf()  internal  view returns (TypeConf memory)
-//    {
-//        return ConfData1;
-//        //return GetConfFromBuf(ConfData);
-//    }
-//
-//
-//    function SaveConf2(TypeConf memory Conf)internal
-//    {
-//        ConfData2=Conf;
-//        //ConfData2=GetBufFromConf(Conf);
-//    }
-//    function LoadConf2()  internal  view returns (TypeConf memory)
-//    {
-//        return ConfData2;
-//        //return GetConfFromBuf(ConfData2);
-//    }
-//
 
 
     //------------------------------------------------------------------------ Slots

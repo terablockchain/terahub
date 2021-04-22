@@ -40,9 +40,10 @@ contract TypeLib
     struct TypeConf
     {
         uint40  WorkNum;
-        uint40  FirstOrderID;
-        uint40  LastOrderID;
-        //15
+        uint40  HeadOrderID;
+        uint40  TailOrderID;
+        uint40  NewOrderID;
+        //20
     }
 
 

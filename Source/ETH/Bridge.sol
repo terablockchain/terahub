@@ -68,13 +68,16 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
         uint OrderNum=2;
         uint BlockNum=(block.timestamp-ConfCommon.FIRST_TIME_BLOCK)/ConfCommon.CONSENSUS_PERIOD_TIME;
 
-        uint PrevBlockNum=ConfData2.FirstOrderID/1000;
+        uint PrevBlockNum=ConfData1.NewOrderID/1000;
         if(PrevBlockNum>BlockNum)
             BlockNum=PrevBlockNum;
         if(PrevBlockNum==BlockNum)
-            OrderNum = (ConfData2.FirstOrderID%1000)+2; // четные
+            OrderNum = (ConfData1.NewOrderID%1000)+2; // четные
+
         require(OrderNum<1000,"Big tx num, try later");
+
         Order.ID=uint40(BlockNum*1000 + OrderNum);
+        ConfData1.NewOrderID=Order.ID;
 
 
         //приводим полученные eth к стандартному формату (точность 1e-9)
@@ -87,7 +90,7 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
         require(Order.NotaryFee>=NeedFee,"Error NotaryFee");
 
 
-        ConfData2.WorkNum++;
+        ConfData1.WorkNum++;
 
 
 
@@ -103,7 +106,7 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
         OrderCreateEmptyBody(Order);
 
         //save
-        SaveNewOrder(ConfData2,Order,0);
+        SaveNewOrder(ConfData1,Order,0);
 
     }
 
@@ -187,7 +190,7 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
         //Если Order.Process==1 и есть NotaryFee, то одинаковыми частями начисляем награду валидаторам - в массив NotaryList.SumDeposit
 
         //8
-        ConfData2.WorkNum++;
+        ConfData1.WorkNum++;
 
         SaveOrder(Order);
 
@@ -280,7 +283,7 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
         Order.NotaryFee=0;
 
         if(NewOrder>0)
-            SaveNewOrder(ConfData2,Order,0);
+            SaveNewOrder(ConfData1,Order,0);
         else
             SaveOrder(Order);
 
@@ -302,7 +305,7 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
         }
 
         //11
-        ConfData2.WorkNum++;
+        ConfData1.WorkNum++;
     }
 
 
@@ -350,7 +353,7 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
             AddrEth.transfer(Order.NotaryFee*1e9);//9 - > 18
 
         //5
-        ConfData2.WorkNum++;
+        ConfData1.WorkNum++;
 
     }
 
@@ -434,10 +437,6 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
 
     function GetConf(uint8 Mode) public view returns(TypeConf memory)
     {
-       if(Mode==2)
-            return ConfData2;
-
-
        return ConfData1;
     }
 
