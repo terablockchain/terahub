@@ -327,6 +327,8 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
         //3
         Order.Process=100;
         SaveOrderHeader(Order);
+        //Not Reentrancy
+
 
         //4
         //transfer
@@ -380,8 +382,7 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
 
         //Save order
         SaveNewOrder(ConfData1,Order,1);//запись с обязательной проверкой уникальности ID
-
-
+        //Not Reentrancy
 
         //transfer
         if(ConfCommon.WORK_MODE>=2)
@@ -394,6 +395,7 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
 
                 //ERC721(NFT) mode
                 //Token.SmartMint(AddrEth, TokenID, Order.Description);
+                //IERC721Transfer(Erc721Addr).safeTransferFrom(msg.sender, address(this), tokenId);
             }
             else
             {

@@ -2,6 +2,8 @@
 
 pragma solidity ^0.8.0;
 
+//TODO переделать ссылки по типу: import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+
 import "./token/ERC721/IERC721.sol";
 import "./token/ERC721/IERC721Receiver.sol";
 import "./token/ERC721/extensions/IERC721Metadata.sol";
