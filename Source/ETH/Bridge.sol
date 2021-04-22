@@ -120,6 +120,7 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
         }
     }
 
+
     function NotarySign(uint40 ID, uint8 Notary, bytes32 SignR,bytes32 SignS,uint8 SignV)  public
     {
 
@@ -257,7 +258,8 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
         for(uint8 i=0;i<Order.SignArr.length;i++)
         {
             TypeSigner memory Item=Order.SignArr[i];
-            require(Item.Notary!=Notary,"This notary sign was already there");
+            //require(Item.Notary!=Notary,"This notary sign was already there"); - так низзя
+            require(Item.SignV!=SignV && Item.SignR!=SignR,"This signature was already there");
 
             if(Item.Notary==0xFF)
             {
