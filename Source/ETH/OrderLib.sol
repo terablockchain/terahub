@@ -15,7 +15,7 @@ contract OrderLib is OwnerLib
 
     function OrderInPeriod(uint ID) view internal returns(uint)
     {
-        uint BlockNumOrder=ID/1000;
+        uint BlockNumOrder=ID/100000;
 
         uint TimeStampOrder=ConfCommon.FIRST_TIME_BLOCK + BlockNumOrder * ConfCommon.CONSENSUS_PERIOD_TIME;
         if(block.timestamp<TimeStampOrder)
@@ -95,12 +95,12 @@ contract OrderLib is OwnerLib
     //------------------------------------------------------------------------
 
 
-//    function GetOrderHeader(uint40 ID) public view returns(bytes32)
+//    function GetOrderHeader(uint48 ID) public view returns(bytes32)
 //    {
 //        uint Header=LoadHeaderBytes(ID);
 //        return bytes32(Header);
 //    }
-//    function GetBody(uint40 BodyID,uint Length) public view returns(bytes memory)
+//    function GetBody(uint48 BodyID,uint Length) public view returns(bytes memory)
 //    {
 //        return LoadBodyBytes(BodyID,Length);
 //    }
@@ -108,19 +108,19 @@ contract OrderLib is OwnerLib
     //----------------------------------------------------------------------------------------------- SAVE/LOAD ORDER
     function SaveOrderHeader(TypeOrder memory Order)internal
     {
-        uint FData=(uint(Order.BodyLength)<<240) | (uint(Order.PrevID)<<200) | (uint(Order.NextID)<<160) | (uint(Order.BodyID)<<120)  | (uint(Order.Process)<<112);
+        uint FData=(uint(Order.BodyLength)<<240) | (uint(Order.PrevID)<<192) | (uint(Order.NextID)<<144) | (uint(Order.BodyID)<<96)  | (uint(Order.Process)<<88);
         SaveHeaderBytes(Order.ID,FData);
     }
     function FillOrderHeader(TypeOrder memory Order,uint FData)internal pure
     {
         Order.BodyLength = uint16((FData>>240) & 0xFFFFFFFFFF);
-        Order.PrevID     = uint40((FData>>200) & 0xFFFFFFFFFF);
-        Order.NextID     = uint40((FData>>160) & 0xFFFFFFFFFF);
-        Order.BodyID     = uint40((FData>>120) & 0xFFFFFFFFFF);
-        Order.Process    = uint8((FData>>112) & 0xFF);
+        Order.PrevID     = uint48((FData>>192) & 0xFFFFFFFFFF);
+        Order.NextID     = uint48((FData>>144) & 0xFFFFFFFFFF);
+        Order.BodyID     = uint48((FData>>96) & 0xFFFFFFFFFF);
+        Order.Process    = uint8((FData>>88) & 0xFF);
     }
 
-    function LoadOrder(uint40 ID) internal view returns(TypeOrder memory)
+    function LoadOrder(uint48 ID) internal view returns(TypeOrder memory)
     {
         TypeOrder memory Order;
         uint FData=LoadHeaderBytes(ID);
@@ -138,12 +138,12 @@ contract OrderLib is OwnerLib
         return Order;
     }
 
-    function GetOrder(uint40 ID) public view returns(bytes memory)
+    function GetOrder(uint48 ID) public view returns(bytes memory)
     {
 
         TypeOrder memory Order=LoadOrder(ID);
         if(Order.ID==0)
-            return hex"";
+            return "";
         return GetBufFromOrder(Order,BUF_EXTERN_FULL);
     }
 
@@ -191,8 +191,8 @@ contract OrderLib is OwnerLib
                     if(Conf.HeadOrderID==Conf.TailOrderID)
                         Conf.HeadOrderID=0;
 
-                    Order.BodyID=uint40((HeaderLast>>120) & 0xFFFFFFFFFF);//BodyID
-                    Conf.TailOrderID=uint40((HeaderLast>>200) & 0xFFFFFFFFFF);//PrevID
+                    Order.BodyID=uint48((HeaderLast>>96) & 0xFFFFFFFFFF);//BodyID
+                    Conf.TailOrderID=uint48((HeaderLast>>192) & 0xFFFFFFFFFF);//PrevID
                 }
             }
         }
@@ -208,12 +208,12 @@ contract OrderLib is OwnerLib
             uint HeaderFirst=LoadHeaderBytes(Conf.HeadOrderID);
             require(HeaderFirst>0,"Error read HeadOrderID");
 
-            //обнуляем предыдущее значение PrevID - но вообще оно и так всегда пустое
-            uint TemplatePrevID = 0xFFFFFFFFFF << 200;
-            HeaderFirst = HeaderFirst | TemplatePrevID;
-            HeaderFirst = HeaderFirst ^ TemplatePrevID;
+//            //обнуляем предыдущее значение PrevID - но вообще оно и так всегда пустое
+//            uint TemplatePrevID = 0xFFFFFFFFFF << 192;
+//            HeaderFirst = HeaderFirst | TemplatePrevID;
+//            HeaderFirst = HeaderFirst ^ TemplatePrevID;
             //новая ссылка
-            HeaderFirst = HeaderFirst |  (uint(Order.ID) << 200);
+            HeaderFirst = HeaderFirst |  (uint(Order.ID) << 192);
 
             SaveHeaderBytes(Conf.HeadOrderID,HeaderFirst);
         }

@@ -13,17 +13,35 @@ import "./ConvertLib.sol";
 contract StorageLib is DataLib, ConvertLib
 {
 
-    //------------------------------------------------------------------------ Conf
+
+//    //------------------------------------------------------------------------ Token conf slots
+//    function GetTokenConf(uint ID)internal view returns (TypeGate memory Data)
+//    {
+//        uint PosHeader=(0xABCD<<240) | (ID<<192);
+//        // solhint-disable-next-line no-inline-assembly
+//        assembly
+//        {
+//            //Data := sload(PosHeader) - низзя так
+//        }
+//    }
+//
+//    function SetTokenConf(uint ID, TypeGate memory Data)internal
+//    {
+//        uint PosHeader=(0xABCD<<240) | (ID<<192);
+//
+//        // solhint-disable-next-line no-inline-assembly
+//        assembly
+//        {
+//            //sstore(PosHeader, Data) - низзя так
+//        }
+//    }
 
 
-
-
-
-    //------------------------------------------------------------------------ Slots
+    //------------------------------------------------------------------------ Order slots
 
     function SaveHeaderBytes(uint ID,uint HeaderData)internal
     {
-        uint PosHeader=(0xABCE<<240) | (ID<<200);
+        uint PosHeader=(0xABCE<<240) | (ID<<192);
 
         // solhint-disable-next-line no-inline-assembly
         assembly
@@ -34,7 +52,7 @@ contract StorageLib is DataLib, ConvertLib
 
     function LoadHeaderBytes(uint ID)internal view returns (uint HeaderData)
     {
-        uint PosHeader=(0xABCE<<240) | (ID<<200);
+        uint PosHeader=(0xABCE<<240) | (ID<<192);
         // solhint-disable-next-line no-inline-assembly
         assembly
         {
@@ -46,7 +64,7 @@ contract StorageLib is DataLib, ConvertLib
     function SaveBodyBytes(uint BodyID,bytes memory data)internal
     {
 
-        uint PosBody = (0xABCE<<240) | (BodyID<<200) | 1;
+        uint PosBody = (0xABCE<<240) | (BodyID<<192) | 1;
         uint PosData;
         assembly
         {
@@ -71,7 +89,7 @@ contract StorageLib is DataLib, ConvertLib
     function LoadBodyBytes(uint BodyID,uint Length)internal view returns (bytes memory)
     {
 
-        uint PosBody = (0xABCE<<240) | (BodyID<<200) | 1;
+        uint PosBody = (0xABCE<<240) | (BodyID<<192) | 1;
         bytes memory Buf=new bytes(Length);
         uint PosData;
         assembly
@@ -99,38 +117,6 @@ contract StorageLib is DataLib, ConvertLib
     }
 
 
-//    function SaveBytes(uint ID,uint BodyID,bytes memory data)internal
-//    {
-//        uint Type=1;
-//        uint PrevID=0;
-//        uint NextID=0;
-//
-//
-//        //1 header
-//        uint FData=(data.length<<240)  | (PrevID<<200) | (NextID<<160) | (BodyID<<120);
-//        SaveHeaderBytes(Type,ID,FData);
-//
-//        //2 body
-//        SaveBodyBytes(Type,BodyID,data);
-//    }
-
-//    function LoadBytes(uint ID)internal view returns (bytes memory)
-//    {
-//        uint Type=1;
-//
-//        //1 header
-//
-//        uint FData=LoadHeaderBytes(Type,ID);
-//
-//        uint Length=(FData>>240) & 0xFFFFFFFFFF;
-//        uint PrevID=(FData>>200) & 0xFFFFFFFFFF;
-//        uint NextID=(FData>>160) & 0xFFFFFFFFFF;
-//        uint BodyID=(FData>>120) & 0xFFFFFFFFFF;
-//
-//
-//        return LoadBodyBytes(Type,BodyID,Length);
-//
-//    }
 
 }
 

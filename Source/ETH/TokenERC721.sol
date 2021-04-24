@@ -388,21 +388,12 @@ contract ERC721 is Context, ERC165, IERC721, IERC721Metadata {
 contract TokenERC721 is ERC721
 {
     address SmartOwner;
-    constructor()ERC721("TERAS", "TERA721")
+    constructor()ERC721("TERA721", "TERA721")
     {
         //SmartOwner = msg.sender;
-        //_initERC("TERA-COLLECTION","TERA721");
-        SmartOwner=msg.sender;
-
-        SmartMint(SmartOwner,2101);
-        SmartMint(0x6103b3AF382A728c8107f3C2dB2D78672ed8978e,2102);
-        SmartMint(SmartOwner,2107);
-
-        _transfer(SmartOwner, 0x6103b3AF382A728c8107f3C2dB2D78672ed8978e, 2107);
-
     }
     function _baseURI() internal view virtual override returns (string memory) {
-        return "https://gateway.pinata.cloud/ipfs/QmdcoQDb6sNgkkChUT6HJ6voS7XnDot2u6ZQwZTSBM3uAy/";
+        return "";//"https://gateway.pinata.cloud/ipfs/QmdcoQDb6sNgkkChUT6HJ6voS7XnDot2u6ZQwZTSBM3uAy/";
     }
 
     modifier OnlyOwner()

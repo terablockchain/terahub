@@ -208,3 +208,79 @@ function COIN_FROM_FLOAT2(Sum)
 }
 
 
+/*
+
+{
+    "EthSmartAddr": "",
+    "SignLib": 281,
+    "Common": {
+        "Pause": 0,
+        "SignPeriod": 100,
+        "TransferPeriod": 200,
+        "NotaryFee": 0.01,
+        "MinNotaryFee": 0,
+        "MinDeposit": 100000,
+        "NotaryArr": [
+            {
+                "Addr": "B13151395FD30AE79E6DB58E35C9BBA12FA8FF63",
+                "AccDeposit": 0,
+                "SumDeposit": 200000.30000000002,
+                "CanSign": 1,
+                "BlockFrom": 0,
+                "BlockTo": 0,
+                "Gates": [
+                    1,
+                    2,
+                    3
+                ]
+            }
+        ],
+        "MinSign": 1,
+        "SlashRate": 1,
+        "MinSlash": 1000
+    },
+    "Gates": {
+        "1": {
+            "ID": 1,
+            "OrderEnum": 1,
+            "ChainName": "ETH",
+            "EthNetworkId": 4,
+            "TokenId": 0,
+            "TokenName": "TERA",
+            "TokenAcc": 891,
+            "Rate": 1,
+            "Pause": 0
+        },
+        "2": {
+            "ID": 2,
+            "OrderEnum": 2,
+            "ChainName": "BSC",
+            "EthNetworkId": 97,
+            "TokenId": 0,
+            "TokenName": "TERA",
+            "TokenAcc": 891,
+            "Rate": 1,
+            "Pause": 0
+        },
+        "3": {
+            "ID": 3,
+            "OrderEnum": 1,
+            "ChainName": "ETH",
+            "EthNetworkId": 4,
+            "TokenId": 10,
+            "TokenName": "USD",
+            "TokenAcc": 522,
+            "Rate": 0.03,
+            "Pause": 0
+        }
+    },
+    "Orders": {
+        "HeadID": 845805900000,
+        "TailID": 845805700000,
+        "NewOrderID": 845805900000,
+        "WorkNum": 4
+    },
+    "cmd": "SetProxy"
+}
+
+ */

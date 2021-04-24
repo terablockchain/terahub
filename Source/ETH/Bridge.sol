@@ -24,28 +24,7 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
     bytes32 constant ZeroSign32=hex"00112233445566778899aabbccddeeffff112233445566778899aabbccddeeff";
 
 
-//    constructor()
-//    {
-//        Owner = msg.sender;
-//
-//
-//        ConfCommon.WORK_MODE = 2;
-//        ConfCommon.CONSENSUS_PERIOD_TIME = 3;
-//        ConfCommon.FIRST_TIME_BLOCK = 1593818071;//Main-net:1403426400     Test-net: 1593818071
-//        ConfCommon.CHANNEL = 606;
-//        ConfCommon.MAX_SIGN_PERIOD = 14400;
-//        ConfCommon.MAX_TRANSFER_PERIOD = 28800;
-//        ConfCommon.NOTARY_COUNT = 1;
-//        ConfCommon.MIN_SIGN_COUNT = 1;
-//        ConfCommon.Rate = 8000;
-//        ConfCommon.MinNotaryFee = 1000000;
-//        ConfCommon.NotaryFee = 10000000;
-//        ConfCommon.MinDeposit = 100000000000;
-//        ConfCommon.SlashRate = 0;
-//        ConfCommon.MinSlash = 0;
-//
-//        SetNotary(0,hex"7D557BD835219FF838E06D2651BAB8F46791092E", 100*1e9, 1);
-//    }
+
 
     //------------------------------------------------------------------------ETH->TERA
     function AddOrder(bytes memory Buf)  public payable
@@ -58,56 +37,62 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
 
         address AddrEth=GetAddrFromBytes20(Order.AddrEth);
 
-        require(Order.Channel==ConfCommon.CHANNEL,"Error order channel");
+        TypeGate memory Gate=GateList[Order.Gate];
+        require(Gate.WORK_MODE>0,"Error order channel or work mode");
+
         require(Order.AddrTera>0,"Error AddrTera");
         require(AddrEth==msg.sender,"Error AddrEth");
 
 
 
         //расчет номера ордера внутри блока
-        uint OrderNum=2;
+        uint OrderNum=0;
         uint BlockNum=(block.timestamp-ConfCommon.FIRST_TIME_BLOCK)/ConfCommon.CONSENSUS_PERIOD_TIME;
 
-        uint PrevBlockNum=ConfData1.NewOrderID/1000;
-        if(PrevBlockNum>BlockNum)
-            BlockNum=PrevBlockNum;
-        if(PrevBlockNum==BlockNum)
-            OrderNum = (ConfData1.NewOrderID%1000)+2; // четные
+        uint PrevBlockNum=ConfData.NewOrderID/1000;
+        if(PrevBlockNum>=BlockNum)
+            OrderNum = (ConfData.NewOrderID%1000) + 1;
 
         require(OrderNum<1000,"Big tx num, try later");
 
-        Order.ID=uint40(BlockNum*1000 + OrderNum);
-        ConfData1.NewOrderID=Order.ID;
+        Order.ID=uint48(BlockNum*100000 + ConfCommon.OrderEnum*1000 + OrderNum);
+        ConfData.NewOrderID=Order.ID;
 
+
+
+
+        Order.NotaryFee=Gate.Rate*ConfCommon.NotaryFee*(Order.Amount+Order.TransferFee)/1e18;
+        if(Order.NotaryFee<ConfCommon.MinNotaryFee)
+            Order.NotaryFee=ConfCommon.MinNotaryFee;
 
         //приводим полученные eth к стандартному формату (точность 1e-9)
-        Order.NotaryFee=uint64(msg.value/1e9);//18 - > 9
+        require(uint64(msg.value/1e9) >= Order.NotaryFee,"Error NotaryFee");
 
-        uint NeedFee=ConfCommon.Rate*ConfCommon.NotaryFee*(Order.Amount+Order.TransferFee)/1e18;
-        if(NeedFee<ConfCommon.MinNotaryFee)
-            NeedFee=ConfCommon.MinNotaryFee;
-
-        require(Order.NotaryFee>=NeedFee,"Error NotaryFee");
-
-
-        ConfData1.WorkNum++;
 
 
 
         //transfer
-        if(ConfCommon.WORK_MODE>=2)
+        if(Gate.WORK_MODE>=2)
         {
-            //ERC20 mode
+
             uint256 Amount=uint256(Order.Amount);
-            Token.SmartBurn(AddrEth, Amount);
+            if(Gate.WORK_MODE==NATIVE_ETH_MODE && Gate.TypeERC==0)
+            {
+                Amount += Order.NotaryFee + Order.TransferFee;//проверяем полную сумму
+            }
+
+            ReceiveOrBurn(Gate, AddrEth, Order.TokenID, Amount);
+            //Token.SmartBurn(AddrEth, Amount);
         }
+
+        ConfData.WorkNum++;
+
 
         //fill notary tx
         OrderCreateEmptyBody(Order);
 
         //save
-        SaveNewOrder(ConfData1,Order,0);
-
+        SaveNewOrder(ConfData,Order,0);
     }
 
     function OrderCreateEmptyBody(TypeOrder memory Order)internal view
@@ -124,7 +109,7 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
     }
 
 
-    function NotarySign(uint40 ID, uint8 Notary, bytes32 SignR,bytes32 SignS,uint8 SignV)  public
+    function NotarySign(uint48 ID, uint8 Notary, bytes32 SignR,bytes32 SignS,uint8 SignV)  public
     {
 
         //1.Проверяем параметры, что ордер не устарел (SignPeriod)
@@ -136,7 +121,7 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
         //7.Если достаточное число подписей - ставим признак Process=1
         //8.Записываем признак апдейта в канал
 
-        require(ID>0 && ID%2==0,"Error ID");
+        require(ID>0 && (ID/1000)%100 == ConfCommon.OrderEnum,"The order was not created in this blockchain");
 
         //1
         uint Period=OrderInPeriod(ID);
@@ -190,7 +175,7 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
         //Если Order.Process==1 и есть NotaryFee, то одинаковыми частями начисляем награду валидаторам - в массив NotaryList.SumDeposit
 
         //8
-        ConfData1.WorkNum++;
+        ConfData.WorkNum++;
 
         SaveOrder(Order);
 
@@ -215,11 +200,12 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
         FillOrderBody(Order,Buf,BUF_EXTERN_HEADER);
 
         //1
-        require(Order.ID>0 && Order.ID%2==0,"Error ID");
+        require(Order.ID>0 && (Order.ID/1000)%100 == ConfCommon.OrderEnum,"The order was not created in this blockchain");
 
 
         //2
-        require(Order.Channel==ConfCommon.CHANNEL,"Error order channel");
+        TypeGate memory Gate=GateList[Order.Gate];
+        require(Gate.WORK_MODE>0,"Error order channel or work mode");
 
         //3
         TypeNotary storage ItemNotary=NotaryList[Notary];
@@ -240,7 +226,7 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
         uint8 ItemNum;
         TypeOrder memory OrderDB=LoadOrder(Order.ID);
 
-        uint64 SlashAmount=Order.Amount+Order.TransferFee;
+        uint64 SlashAmount=Order.Amount + Order.TransferFee;
 
         if(OrderDB.ID==0)
         {
@@ -250,7 +236,7 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
         }
         else
         {
-            uint64 SlashAmountDB=OrderDB.Amount+OrderDB.TransferFee;
+            uint64 SlashAmountDB=OrderDB.Amount + OrderDB.TransferFee;
             if(SlashAmountDB>SlashAmount)
                 SlashAmount=SlashAmountDB;
 
@@ -283,13 +269,13 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
         Order.NotaryFee=0;
 
         if(NewOrder>0)
-            SaveNewOrder(ConfData1,Order,0);
+            SaveNewOrder(ConfData,Order,0);
         else
             SaveOrder(Order);
 
 
         //10
-        uint64 SlashSum=ConfCommon.Rate*ConfCommon.SlashRate*SlashAmount/1e9;
+        uint64 SlashSum=Gate.Rate*ConfCommon.SlashRate*SlashAmount/1e9;
         if(SlashSum<ConfCommon.MinSlash)
             SlashSum=ConfCommon.MinSlash;
 
@@ -297,19 +283,21 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
         if(SlashSum>=ItemNotary.SumDeposit)
         {
             ItemNotary.SumDeposit=0;
-            ItemNotary.CanSign=0;
         }
         else
         {
             ItemNotary.SumDeposit-=SlashSum;
         }
 
+        if(ItemNotary.SumDeposit<ConfCommon.MinDeposit)
+            ItemNotary.CanSign=0;
+
         //11
-        ConfData1.WorkNum++;
+        ConfData.WorkNum++;
     }
 
 
-    function CancelOrder(uint40 ID) public
+    function CancelOrder(uint48 ID) public
     {
         //1. Проверяем время ордера больше SignPeriod
         //2. Проверяем что Process===0
@@ -317,7 +305,8 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
         //4. Возвращаем средства
         //5.Записываем признак апдейта в канал
 
-        require(ID>0 && ID%2==0,"Error ID");
+        require(ID>0 && (ID/1000)%100 == ConfCommon.OrderEnum,"The order was not created in this blockchain");
+
 
         //1
         uint Period=OrderInPeriod(ID);
@@ -325,6 +314,9 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
 
         TypeOrder memory Order=LoadOrder(ID);
         require(Order.ID>0,"Error order ID");
+
+        TypeGate memory Gate=GateList[Order.Gate];
+        require(Gate.WORK_MODE>0,"Error order channel or work mode");
 
         //2
         require(Order.Process==0,"The order has already been processed");
@@ -337,23 +329,21 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
 
         //4
         //transfer
-        address payable AddrEth=payable(GetAddrFromBytes20(Order.AddrEth));
+        address AddrEth=GetAddrFromBytes20(Order.AddrEth);
 
-        if(ConfCommon.WORK_MODE>=2)
+        if(Gate.WORK_MODE>=2)
         {
-            //ERC20 mode
-
-
             uint256 Amount=uint256(Order.Amount);
-            Token.SmartMint(AddrEth, Amount);
-
+            SendOrMint(Gate, AddrEth, Order.TokenID, Amount);
         }
 
         if(Order.NotaryFee>0)
-            AddrEth.transfer(Order.NotaryFee*1e9);//9 - > 18
+        {
+            payable(AddrEth).transfer(Order.NotaryFee*1e9);//9 - > 18
+        }
 
         //5
-        ConfData1.WorkNum++;
+        ConfData.WorkNum++;
 
     }
 
@@ -370,9 +360,12 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
 
         TypeOrder memory Order;
         FillOrderBody(Order,Buf,BUF_EXTERN_FULL);
-        require(Order.Channel==ConfCommon.CHANNEL,"Error order channel");
+
+        TypeGate memory Gate=GateList[Order.Gate];
+        require(Gate.WORK_MODE>0,"Error order channel or work mode");
         require(Order.ID>0,"Error order ID");
-        require(Order.ID%2==1,"Error order ID");
+        //require(Order.ID%2==1,"Error order ID");
+        require((Order.ID/1000)%100 == 0,"The order was not created in Tera-Hub");
 
         uint Period=OrderInPeriod(Order.ID);
         require(Period>=2 && Period<=3,"Error order period (time stamp)");
@@ -386,120 +379,55 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
 
 
         //Save order
-        SaveNewOrder(ConfData1,Order,1);//запись с обязательной проверкой уникальности ID
+        SaveNewOrder(ConfData,Order,1);//запись с обязательной проверкой уникальности ID
         //Not Reentrancy
 
         //transfer
-        if(ConfCommon.WORK_MODE>=2)
+        if(Gate.WORK_MODE>=2)
         {
             address AddrEth=GetAddrFromBytes20(Order.AddrEth);
-            uint TokenID=UintFromBytes(Order.TokenID);
-            if(TokenID>0)
+
+            uint256 Amount=uint256(Order.Amount);
+
+            if(Order.TransferFee>0)
             {
-                require(TokenID==0,"TokenID not support");
-
-                //ERC721(NFT) mode
-                //Token.SmartMint(AddrEth, TokenID, Order.Description);
-                //IERC721Transfer(Erc721Addr).safeTransferFrom(msg.sender, address(this), tokenId);
+                uint256 Fee=uint256(Order.TransferFee);
+                if(tx.origin==AddrEth)
+                    Amount+=Fee;
+                else
+                    SendOrMint(Gate, tx.origin, "", Fee);
             }
-            else
-            {
-                //ERC20 mode
 
-                uint256 Amount=uint256(Order.Amount);
-                if(Order.TransferFee>0)
-                {
-                    uint256 Fee=uint256(Order.TransferFee);
-                    if(tx.origin==AddrEth)
-                        Amount+=Fee;
-                    else
-                        Token.SmartMint(tx.origin, Fee);
-                }
+            SendOrMint(Gate, AddrEth, Order.TokenID, Amount);
 
-                Token.SmartMint(AddrEth, Amount);
-            }
         }
     }
 
 
+
     //------------------------------------------------------------------------ COMMON
-    function SetCommon(TypeCommon memory Conf) public OnlyOwner
+    function SetCommon(TypeCommon memory Conf) public OnlyOwner                         //<------------------ owner
     {
         ConfCommon=Conf;
     }
 
 
 
-    function GetCommon() public view returns(TypeCommon memory)
+    function GetCommon() public view returns(TypeCommon memory)                         //<------------------ owner
     {
         return ConfCommon;
     }
 
-    function GetConf(uint8 Mode) public view returns(TypeConf memory)
+
+    function GetConf() public view returns(TypeConf memory)
     {
-       return ConfData1;
+        return ConfData;
     }
 
 
-//    function GetNotary(uint8 Num)public view returns(TypeNotary memory)
-//    {
-//        return NotaryList[Num];
-//    }
 
 }
 
-//
-//abstract contract  UpgradedBridge is StandartBridge
-//{
-//    // those methods are called by the legacy contract
-//    // and they must ensure msg.sender to be the contract address
-//
-//    function AddOrderByLegacy(bytes memory Buf)  public payable virtual;
-//}
-//
-//
-//contract Bridge is  StandartBridge
-//{
-//    address public upgradedAddress;
-//    bool public deprecated;
-//
-//    //------------------------------------------------------------------------
-//    constructor()
-//    {
-//        Owner = msg.sender;
-//
-//
-//        ConfCommon.CONSENSUS_PERIOD_TIME = 3;
-//        ConfCommon.FIRST_TIME_BLOCK = 1593818071;//const from TERA 1/1000        Main-net:1403426400     Test-net: 1593818071
-//
-//        ConfCommon.CHANNEL=606;//652 - tera dapp for testnet kovan, 606 - rinkeby
-//        ConfCommon.MAX_SIGN_PERIOD=60;//24*3600/6;
-//        ConfCommon.MAX_TRANSFER_PERIOD=120;//24*3600/3;
-//        ConfCommon.MIN_SIGN_COUNT = 1;
-//        ConfCommon.NOTARY_COUNT = 0;
-//        ConfCommon.WORK_MODE = 1;
-//        ConfCommon.RATE = 0.000008 * 1e9;
-//        ConfCommon.MIN_NOTARY_FEE = 0.001 * 1e6;
-//        ConfCommon.NOTARY_FEE = 0.01 * 1e3;
-//
-//        ConfCommon.MIN_DEPOSIT = 100;
-//
-//        SetNotary(0,hex"7D557BD835219FF838E06D2651BAB8F46791092E", 100*1e9, 1);
-//    }
-//
-//    // Forward methods to upgraded contract if this one is deprecated
-//    function AddOrder(bytes memory Buf)  public payable override
-//    {
-//        if (deprecated)
-//        {
-//            return UpgradedBridge(upgradedAddress).AddOrderByLegacy(Buf);
-//        } else
-//        {
-//            return super.AddOrder(Buf);
-//        }
-//    }
-//
-//}
 
 //address(this)
 //IERC721Transfer(Erc721Addr).safeTransferFrom(msg.sender, address(this), tokenId);

@@ -282,8 +282,8 @@ contract ConvertLib is DataLib
     {
         /*
         TERA:
-        Order.Channel=DecodeUint(Buf,4);
-        Order.ID=DecodeUint(Buf,5);
+        Order.Gate=DecodeUint(Buf,4);
+        Order.ID=DecodeUint(Buf,6);
         Order.AddrTera=DecodeUint(Buf,4);
         Order.AddrEth=GetHexFromArr(DecodeArrConst(Buf,20));
         Order.TokenID=GetHexFromArr(DecodeArr(Buf));
@@ -294,12 +294,13 @@ contract ConvertLib is DataLib
 
         require(SizeMode>=BUF_STORE,"FillOrderBody:SizeMode error");
 
-        uint MustMinLength=4+5+4+20 +2 +8+8+2;
+        uint MustMinLength=4+6+4+20 +2 +8+8+2;
+
 
         if(SizeMode==BUF_EXTERN_FULL)
             MustMinLength+= 1+66;
         if(SizeMode==BUF_STORE)
-            MustMinLength+= 1+66 + 8;//+1;
+            MustMinLength+= 1+66 + 8;
         //BUF_EXTERN_HEADER - not add
 
         require(Buf.length>=MustMinLength,"Error FillOrderBody Data length");
@@ -309,8 +310,8 @@ contract ConvertLib is DataLib
 
         uint BufPos=GetBufPos(Buf);
 
-        Order.Channel=GetUint4(BufPos); BufPos+=4;
-        Order.ID=GetUint5(BufPos); BufPos+=5;
+        Order.Gate=GetUint4(BufPos); BufPos+=4;
+        Order.ID=GetUint6(BufPos);   BufPos+=6;
 
 
         Order.AddrTera=GetUint4(BufPos); BufPos+=4;
@@ -362,9 +363,7 @@ contract ConvertLib is DataLib
         }
 
         //data from state
-
         Order.NotaryFee=GetUint8(BufPos); BufPos+=8;
-        //Order.Process=GetUint1(BufPos); BufPos++;
         CheckBufPos(Buf,BufPos);
     }
 
@@ -373,8 +372,8 @@ contract ConvertLib is DataLib
     {
         /*
         TERA:
-        EncodeUint(Buf,Order.Channel,4);
-        EncodeUint(Buf,Order.ID,5);
+        EncodeUint(Buf,Order.Gate,4);
+        EncodeUint(Buf,Order.ID,6);
         EncodeUint(Buf,Order.AddrTera,4);
         EncodeArrConst(Buf,Order.AddrEth,20);
         EncodeArr(Buf,Order.TokenID);
@@ -387,12 +386,12 @@ contract ConvertLib is DataLib
         uint32 size1=uint32(Order.TokenID.length);
         uint32 size2=uint32(Order.Description.length);
         uint32 size3=uint32(Order.SignArr.length);
-        uint Length=4+5+4+20+8+8+2+2+size1+size2;
+        uint Length=4+6+4+20+2+8+8+2+size1+size2;
         if(SizeMode>=BUF_STORE)
             Length+= 1 + size3*66 +  8;// + 1;
 
         if(SizeMode==BUF_EXTERN_FULL)
-            Length+= 10 + 1;
+            Length+= 1 + 6+6;
 
 
         bytes memory Buf=new bytes(Length);
@@ -401,8 +400,8 @@ contract ConvertLib is DataLib
 
 
 
-        EncodeUint(BufPos,Order.Channel,4);          BufPos+=4;
-        EncodeUint(BufPos,Order.ID,5);               BufPos+=5;
+        EncodeUint(BufPos,Order.Gate,4);             BufPos+=4;
+        EncodeUint(BufPos,Order.ID,6);               BufPos+=6;
         EncodeUint(BufPos,Order.AddrTera,4);         BufPos+=4;
         EncodeArrConst(BufPos,Order.AddrEth);        BufPos+=20;
 
@@ -444,8 +443,8 @@ contract ConvertLib is DataLib
         //full
         EncodeUint(BufPos,Order.Process,1);        BufPos++;
 
-        EncodeUint(BufPos,Order.PrevID,5);         BufPos+=5;
-        EncodeUint(BufPos,Order.NextID,5);         BufPos+=5;
+        EncodeUint(BufPos,Order.PrevID,6);         BufPos+=6;
+        EncodeUint(BufPos,Order.NextID,6);         BufPos+=6;
 
         CheckBufPos(Buf,BufPos);
         return Buf;

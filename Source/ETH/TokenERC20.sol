@@ -385,15 +385,17 @@ contract TokenERC20 is ERC20
         }
     }
 
-    function SmartMint(address account, uint256 amount) public OnlyOwner
+    function SmartMint(address account, uint256 id, uint amount) public OnlyOwner
     {
         _mint(account,amount);
     }
 
-    function SmartBurn(address account, uint256 amount) public OnlyOwner
+    function SmartBurn(address account, uint256 id, uint256 amount) public OnlyOwner
     {
         _burn(account,amount);
     }
+
+
 
 }
 
