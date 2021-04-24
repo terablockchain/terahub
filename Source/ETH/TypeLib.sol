@@ -45,6 +45,7 @@ contract TypeLib
         uint8  TypeERC;//0 - eth, 1-erc20, 2-erc721, 3-1155
         uint48 Rate;//курс монеты к eth (в полях Amount и TransferFee) с точностью 1e-9
         address TokenAddr;
+        uint8 Decimals;
     }
 
     struct TypeConf
