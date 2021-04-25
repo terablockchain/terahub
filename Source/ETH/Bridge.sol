@@ -61,17 +61,12 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
 
 
 
-        Order.NotaryFee=ConfCommon.NotaryFee*(Order.Amount+Order.TransferFee)/1e9;
-        uint64 MinNotaryFee=uint64(Gate.Rate)*ConfCommon.MinNotaryFee/1e9;
-        //uint64 MinNotaryFee=2500000000000*1000000/1e9;
-        //uint64 MinNotaryFee=uint64(Gate.Rate)*1000000/1e9;
-        //MinNotaryFee = 1e9;
+        Order.NotaryFee=uint64(uint(ConfCommon.NotaryFee)*(Order.Amount+Order.TransferFee)/1e9);
+
+        //перевод MinNotaryFee в валюту ордера
+        uint MinNotaryFee=uint(Gate.Rate)*ConfCommon.MinNotaryFee/1e9;
         if(Order.NotaryFee<MinNotaryFee)
-            Order.NotaryFee=MinNotaryFee;
-
-        //приводим полученные eth к стандартному формату (точность 1e-9)
-        //require(uint64(msg.value/1e9) >= Order.NotaryFee,"Error NotaryFee");
-
+            Order.NotaryFee=uint64(MinNotaryFee);
 
 
 
@@ -80,10 +75,6 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
         {
 
             uint256 Amount=uint256(Order.Amount + Order.TransferFee + Order.NotaryFee);
-//            if(Gate.WORK_MODE==ERC_OTHER && Gate.TypeERC==0)
-//            {
-//                Amount += Order.NotaryFee + Order.TransferFee;//проверяем полную сумму
-//            }
 
             //переводим точность к точности монеты
             Amount = Amount*(10**Gate.Decimals)/1e9;
@@ -233,7 +224,8 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
         uint8 ItemNum;
         TypeOrder memory OrderDB=LoadOrder(Order.ID);
 
-        uint64 SlashAmount=Order.Amount + Order.TransferFee;
+        //точность 1e9
+        uint SlashAmount=Order.Amount + Order.TransferFee;
 
         if(OrderDB.ID==0)
         {
@@ -243,7 +235,7 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
         }
         else
         {
-            uint64 SlashAmountDB=OrderDB.Amount + OrderDB.TransferFee;
+            uint SlashAmountDB=OrderDB.Amount + OrderDB.TransferFee;
             if(SlashAmountDB>SlashAmount)
                 SlashAmount=SlashAmountDB;
 
@@ -282,7 +274,8 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
 
 
         //10
-        uint64 SlashSum=uint64(Gate.Rate)*ConfCommon.SlashRate*SlashAmount/1e9;
+        //перевод валюты ордера в Eth
+        uint SlashSum=uint(ConfCommon.SlashRate)*SlashAmount*1e9/uint(Gate.Rate);
         if(SlashSum<ConfCommon.MinSlash)
             SlashSum=ConfCommon.MinSlash;
 
@@ -293,7 +286,7 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
         }
         else
         {
-            ItemNotary.SumDeposit-=SlashSum;
+            ItemNotary.SumDeposit-=uint64(SlashSum);
         }
 
         if(ItemNotary.SumDeposit<ConfCommon.MinDeposit)

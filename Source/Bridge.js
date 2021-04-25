@@ -295,3 +295,4 @@ function COIN_FROM_FLOAT2(Sum)
 }
 
  */
+
