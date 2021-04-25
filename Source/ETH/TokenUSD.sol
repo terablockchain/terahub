@@ -360,17 +360,19 @@ contract ERC20 is Context
 }
 
 //------------------------------------------------------------------------
-contract TokenERC20 is ERC20
+
+contract TokenUSD is ERC20
 {
     address SmartOwner;
-
     function decimals() public pure returns (uint8) {
-        return 9;//<----------------------------------------------------------------------------------- 18
+        return 6;//<----------------------------------------------------------------------------------- 18
     }
 
-    constructor()ERC20("TERA","TERA")
+    constructor()ERC20("USD","USD")
     {
-        //SmartOwner = msg.sender;
+        SmartOwner = msg.sender;
+
+        SmartMint(SmartOwner,100000*1e6);
     }
 
     modifier OnlyOwner()
@@ -379,28 +381,11 @@ contract TokenERC20 is ERC20
         _;
     }
 
-    function SetSmart(address newOwner) public
-    {
-        if(SmartOwner!=address(0))
-            require(msg.sender == SmartOwner, "Need only owner access!");
 
-        if (newOwner != address(0))
-        {
-            SmartOwner = newOwner;
-        }
-    }
 
-    function SmartMint(address account, uint256 id, uint amount) public OnlyOwner
+    function SmartMint(address account, uint amount) public OnlyOwner
     {
         _mint(account,amount);
     }
 
-    function SmartBurn(address account, uint256 id, uint256 amount) public OnlyOwner
-    {
-        _burn(account,amount);
-    }
-
-
-
 }
-

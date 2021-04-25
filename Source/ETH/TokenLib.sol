@@ -24,25 +24,28 @@ contract BridgeERC20 is OwnerLib
     {
         uint TokenID=UintFromBytes(OrderTokenID);
 
-        if(Gate.WORK_MODE==OWN_MINT_MODE)
+        if(Gate.WORK_MODE==ERC_MINT)
         {
             IOwnTokenERC(Gate.TokenAddr).SmartMint(AddrEth, TokenID, Amount);
         }
-        else//NATIVE_ETH_MODE
+        else//ERC_OTHER
         {
             if(Gate.TypeERC==0)//eth
             {
-                payable(AddrEth).transfer(Amount*1e9);//9 - > 18
+                //payable(AddrEth).transfer(Amount*1e9);//9 - > 18
+                payable(AddrEth).transfer(Amount);
             }
             else
             if(Gate.TypeERC==1)//20
             {
-                IERC20(Gate.TokenAddr).transferFrom(address(this), AddrEth, Amount);
+                IERC20(Gate.TokenAddr).transfer(AddrEth, Amount);
+                //IERC20(Gate.TokenAddr).transferFrom(address(this), AddrEth, Amount);
             }
             else
             if(Gate.TypeERC==2)//721
             {
-                IERC721(Gate.TokenAddr).transferFrom(address(this), AddrEth, TokenID);
+                IERC721(Gate.TokenAddr).safeTransferFrom(address(this), AddrEth, TokenID);
+                //IERC721(Gate.TokenAddr).transferFrom(address(this), AddrEth, TokenID);
             }
             else
             if(Gate.TypeERC==3)//1155
@@ -57,16 +60,15 @@ contract BridgeERC20 is OwnerLib
     function ReceiveOrBurn(TypeGate memory Gate, address AddrEth, bytes memory OrderTokenID, uint256 Amount) internal
     {
         uint TokenID=UintFromBytes(OrderTokenID);
-        if(Gate.WORK_MODE==OWN_MINT_MODE)
+        if(Gate.WORK_MODE==ERC_MINT)
         {
             IOwnTokenERC(Gate.TokenAddr).SmartBurn(AddrEth, TokenID, Amount);
         }
-        else//NATIVE_ETH_MODE
+        else//ERC_OTHER
         {
             if(Gate.TypeERC==0)//eth
             {
-                //приводим полученные eth к стандартному формату (точность 1e-9)
-                require(uint64(msg.value/1e9) >= Amount,"Error receive Amount");
+                require(uint64(msg.value) >= Amount,"Error receive Amount");
             }
             else
             if(Gate.TypeERC==1)//20
@@ -101,7 +103,7 @@ contract BridgeERC20 is OwnerLib
     {
         GateList[Num]=Gate;
 
-        if(Gate.WORK_MODE==OWN_MINT_MODE)
+        if(Gate.WORK_MODE==ERC_MINT)
             IOwnTokenERC(Gate.TokenAddr).SetSmart(address(this));
 
     }

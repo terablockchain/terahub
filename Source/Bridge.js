@@ -210,7 +210,6 @@ function COIN_FROM_FLOAT2(Sum)
 
 /*
 
-
 {
     "EthSmartAddr": "0xbc4d60aa28ab4e8f51c469917a7d2b5cba46c740",
     "SignLib": 283,
@@ -219,13 +218,13 @@ function COIN_FROM_FLOAT2(Sum)
         "SignPeriod": 14400,
         "TransferPeriod": 28800,
         "NotaryFee": 0.01,
-        "MinNotaryFee": 0,
+        "MinNotaryFee": 1,
         "MinDeposit": 100000,
         "NotaryArr": [
             {
                 "Addr": "B13151395FD30AE79E6DB58E35C9BBA12FA8FF63",
                 "AccDeposit": 0,
-                "SumDeposit": 240012.30000000002,
+                "SumDeposit": 240029.050000001,
                 "CanSign": 1,
                 "BlockFrom": 0,
                 "BlockTo": 0,
@@ -248,21 +247,19 @@ function COIN_FROM_FLOAT2(Sum)
             "EthNetworkId": 4,
             "TokenId": 0,
             "TokenName": "TERA",
-            "Decimals": 9,
             "TokenAcc": 891,
-            "Rate": 8000,
+            "Rate": 1,
             "Pause": 0
         },
         "2": {
             "ID": 2,
-            "OrderEnum": 2,
-            "ChainName": "BSC",
-            "EthNetworkId": 97,
-            "TokenId": 0,
-            "TokenName": "TERA",
-            "Decimals": 9,
-            "TokenAcc": 891,
-            "Rate": 2000,
+            "OrderEnum": 1,
+            "ChainName": "ETH",
+            "EthNetworkId": 4,
+            "TokenId": 273,
+            "TokenName": "ETH",
+            "TokenAcc": 899,
+            "Rate": 125000,
             "Pause": 0
         },
         "3": {
@@ -272,17 +269,27 @@ function COIN_FROM_FLOAT2(Sum)
             "EthNetworkId": 4,
             "TokenId": 10,
             "TokenName": "USD",
-            "Decimals": 6,
             "TokenAcc": 522,
-            "Rate": 0.03,
+            "Rate": 50,
             "Pause": 0
+        },
+        "2000": {
+            "ID": 2000,
+            "OrderEnum": 2,
+            "ChainName": "BSC",
+            "EthNetworkId": 97,
+            "TokenId": 0,
+            "TokenName": "TERA",
+            "TokenAcc": 891,
+            "Rate": 2000,
+            "Pause": 1
         }
     },
     "Orders": {
-        "HeadID": 848449601001,
+        "HeadID": 849254500000,
         "TailID": 848345100000,
-        "NewOrderID": 848379200000,
-        "WorkNum": 9
+        "NewOrderID": 849254500000,
+        "WorkNum": 36
     },
     "cmd": "SetCommon"
 }

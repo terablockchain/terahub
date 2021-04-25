@@ -13,8 +13,9 @@ contract TypeLib
     uint constant BUF_EXTERN_FULL  = 3;
     uint constant BUF_EXTERN_HEADER = 4;
 
-    uint constant OWN_MINT_MODE = 2;
-    uint constant NATIVE_ETH_MODE = 3;
+    uint constant ERC_SKIP = 1;
+    uint constant ERC_MINT = 2;
+    uint constant ERC_OTHER = 3;
 
     struct TypeCommon
     {
@@ -28,7 +29,6 @@ contract TypeLib
 
         uint48 MinNotaryFee;//мин. комиссия с точностью 1e-9   //1e-6
         uint48 NotaryFee;//коэффициент нотариальной комисии с точностью 1e-9  //1e-3
-
         uint48 MinDeposit;//мин депозит с точностью 1e-9   // в целых монетых Eth
 
 
@@ -41,7 +41,7 @@ contract TypeLib
 
     struct TypeGate
     {
-        uint8  WORK_MODE;//0 - pause, 1 - skip, 2 - own mint (from tera), 3 - native eth token
+        uint8  WORK_MODE;//0 - pause, 1 - skip, 2 - own mint (from tera), 3 - other token
         uint8  TypeERC;//0 - eth, 1-erc20, 2-erc721, 3-1155
         uint48 Rate;//курс монеты к eth (в полях Amount и TransferFee) с точностью 1e-9
         address TokenAddr;
