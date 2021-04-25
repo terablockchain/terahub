@@ -4,63 +4,124 @@
 <!--<script src="/file/196/0">TAB local-net</script>-->
 
 <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
-<script src="/smart/215">OrderLib test-net</script>
-<script src="/file/8251388/0">OrderLib client part test-net</script>
+<script src="/smart/283">OrderLib test-net</script>
+<script src="/file/8517548/0">OrderLib client part test-net</script>
 
 
 
 
 
 <script>
+    ALL_ACCOUNTS=1;
+    var MapCurNum={};
+
+
+    var OwnerMode;
     var DELTA_REMOVE=50;
     OLib.WORK_DELTA=2;//отступ от краев внутри разрешенного диапазона работы
     OLib.ContractAddr="";
+    OLib.EthNetworkId=0;
+    OLib.NetMapByGate={};
 
     var MAX_OLD_ORDER_LENGH=20;
 
-    ALL_ACCOUNTS=1;
     var TESTMODE=0;
 
     var glPrivKey;
-    var SaveIdArr=["idMode","idAddrTera","idAddrEth","idAmount","idTransferFee","idDescription", "idPrivKey"];
+    var SaveIdArr=["idToken","idBridge","idAddrTera","idAddrEth","idAmount","idTransferFee","idDescription", "idPrivKey"];
     var OrderArr=[];
     var MonitorMode="MY";
     var PrevMonitorMode;
     var MapPending={};
-    var SendEthMap={};
+    var SendBtMap={};
     var glSendNum=0;
 
     var CurrentFormUID=0;
+
+
+
+
+    // ethereum.on('accountsChanged', function (accounts)
+    // {
+    //     console.log("accountsChanged>",accounts);
+    // });
+
+    ethereum.on('chainChanged', function (chainId)
+    {
+        //console.log("chainChanged>",chainId);
+        OLib.DeltaConfUpdate=1;
+        OLibClearCahce();
+        OLib.EthNetworkId=chainId;
+        SetChannelList();
+
+    });
+
+    async function FillEthNetwork()
+    {
+        OLib.EthNetworkId = await ethereum.request({ method: 'net_version' });
+    }
+    async function FillEthSmart()
+    {
+        if(!OLib.ConfTera)
+            await GetConfTera({});
+        FillGates(OLib.ConfTera);
+    }
+
+
+
     //---------------------------------------------------------------------------
     //---------------------------------------------------------------------------
 
-
-
-
     //---------------------------------------------------------------------------
     //---------------------------------------------------------------------------
 
-    window.addEventListener('Init',function ()
+    window.addEventListener('Init',async function ()
     {
         if(SMART.Num===7)
+        {
             TESTMODE=1;
+            OLib.WORK_PERIOD=1;
+        }
+        SetVisibleBlock("idTest1",TESTMODE);
 
         CheckArr();
         LoadValues();
-        CalcSecret();
 
-        SmartGetInfo();
+        SmartGetConf();
         PrepareSavingItems();
+
+        var Conf=await GetConfTera();
+
+        if(TESTMODE && (!Conf || !Conf.Common))
+        {
+            SmartGetEmpty();
+            SmartSetConf()
+        }
+
         UpdateOrderList(1,1);
 
-        GetConfTera();
-        //GetCommonEth();
+        OLib.DeltaConfUpdate=1;
 
+        FillEthNetwork();
+        SetTokenList();
+
+        setInterval(function()
+        {
+            OLib.DeltaConfUpdate++;
+            if(OLib.DeltaConfUpdate>10)
+                OLib.DeltaConfUpdate=10;
+        },5*1000)
     });
+
+
+
+
     window.addEventListener('UpdateInfo',function ()
     {
         CheckArr();
         UpdateOrderList();
+
+        SetTokenList();
     });
 
     window.addEventListener('Event',function(e)
@@ -76,7 +137,7 @@
         if(Data.cmd==="AddOrder")
         {
             delete MapPending[Data.UID];
-            if(Data.UID===CurrentFormUID && idDescription.value!=="-")
+            if(Data.UID===CurrentFormUID && idDescription.value!=="-" && !TESTMODE)
                 ClearSend();
         }
 
@@ -88,30 +149,47 @@
         idLogs.value=Str+"\n-------\n"+idLogs.value;
         //console.log(Data);
 
-        UpdateTeraCache(Data);
+        var Order=Data;
+        if(Order.cmd && Order.Data)
+            Order=Order.Data;
+
+        if(Order.ID)
+        {
+            UpdateTeraCache(Order);
+            UpdateOrderList(1);
+        }
+
 
     });
 
     function CheckArr()
     {
-        var bOwner=0;
+        var TokenId=-1;
+        var Gate=GetCurrentGateInfo();
+        if(Gate)
+        {
+            TokenId=Gate.TokenId;
+        }
+
+        OwnerMode=0;
         var Arr=[];
         for(var i=0;i<USER_ACCOUNT.length;i++)
         {
             var Item=USER_ACCOUNT[i];
             if(SMART.Owner===Item.Num)
-                bOwner=1;
+                OwnerMode=1;
 
-            if(Item.Currency!==0)//todo
-                continue;
             if(SMART.Num!==Item.Value.Smart)
                 continue;
 
-            var Value={value:Item.Num, text:Item.Num+"."+Item.Name+"  "+SUM_TO_STRING(Item.Value,Item.Currency,1)};
-            Arr.push(Value);
+            if(Item.Currency===TokenId)
+            {
+                var Value={value:Item.Num, text:Item.Num+"."+Item.Name+"  "+SUM_TO_STRING(Item.Value,Item.Currency,1)};
+                Arr.push(Value);
+            }
         }
 
-        SetVisibleBlock("mOwner",bOwner);
+        SetVisibleBlock("mOwner",OwnerMode);
 
         FillSelect("idAddrTera",Arr);
     }
@@ -123,29 +201,34 @@
 
 
 
+
     //--------------------------------------------------------------------------- ETH Coin
     async function AddCoin()
     {
-        var tokenAddress=await CallEth("Token");
-        if(!tokenAddress)
+        var Gate=GetCurrentGateInfo();
+        if(!Gate)
             return;
 
-        const tokenSymbol = 'TERA';
-        const tokenDecimals = 9;
-        const tokenImage = 'https://terawallet.org/tera.ico';
+        var GateEth=await GetGateEth(Gate.ID);
+        if(!GateEth || GateEth.TokenAddr=="0x0000000000000000000000000000000000000000")
+            return SetError("Error token conf");
+
+        var tokenImage;
+        if(Gate.TokenName=='TERA')
+            tokenImage = 'https://terawallet.org/tera.ico';
 
 
 
         try {
             // wasAdded is a boolean. Like any RPC method, an error may be thrown.
-            const wasAdded = await ethereum.request({
+            var wasAdded = await ethereum.request({
                 method: 'wallet_watchAsset',
                 params: {
                     type: 'ERC20', // Initially only supports ERC20, but eventually more!
                     options: {
-                        address: tokenAddress, // The address that the token is at.
-                        symbol: tokenSymbol, // A ticker symbol or shorthand, up to 5 chars.
-                        decimals: tokenDecimals, // The number of decimals in the token
+                        address: GateEth.TokenAddr, // The address that the token is at.
+                        symbol: Gate.TokenName, // A ticker symbol or shorthand, up to 5 chars.
+                        decimals: GateEth.Decimals, // The number of decimals in the token
                         image: tokenImage, // A string url of the token logo
                     },
                 },
@@ -156,6 +239,31 @@
             console.log(error);
         }
     }
+
+    async function AddChainParameter()
+    {
+        const data =
+            [
+                {
+                    chainId: "0x"+(97).toString(16), // A 0x-prefixed hexadecimal string
+                    chainName: "BNB-TEST",
+                    nativeCurrency: {
+                        name: "BNB",
+                        symbol: "BNB", // 2-6 characters long
+                        decimals: 18,
+                    },
+                    rpcUrls: ["https://data-seed-prebsc-1-s1.binance.org:8545"],
+                    //blockExplorerUrls?: string[];
+                }
+            ];
+
+        var wasAdded = await ethereum.request({method: 'wallet_addEthereumChain',params: data});
+
+        console.log(wasAdded);
+    }
+
+
+
 
     //--------------------------------------------------------------------------- ETH Send
 
@@ -190,38 +298,88 @@
     }
 
 
+
+    function ViewOrder(ID)
+    {
+        var Order=FindOrderByID(ID);
+        if(Order)
+        {
+            console.log(Order);
+        }
+    }
+
+    async function SendIDToTera(ID,btn)
+    {
+        btn.disabled = true;
+
+        var Order=FindOrderByID(ID);
+        if(Order)
+        {
+            SendBtMap["Send"+Order.ID]=1;
+            var Order2=GetPureOrder(Order);
+            console.log(Order2);
+            MSendCall(0,"ExecOrder",GetPureOrder(Order),[],+idAddrTera.value);
+        }
+    }
+
+
     async function SendExecOrderEth(Order)
     {
         var Conf=await GetConfTera();
-        if(!Conf || !Conf.NOTARY || !Conf.NOTARY.MinSign)
+        if(!Conf || !Conf.Common || !Conf.Common.MinSign)
             return SetError("Error Tera Conf");
 
-        SendEthMap[Order.ID]=1;
+        SendBtMap["Send"+Order.ID]=1;
         var Buf=[];
-        EncodeOrder(Buf,Order,1,Conf.NOTARY.MinSign);
+        EncodeOrder(Buf,Order,1,Conf.Common.MinSign);
         console.log("ETH Length:",Buf.length,ToBytes(Buf));
         return SendEth("ExecOrder",ToBytes(Buf));
     }
 
 
 
-    function SendIDToSlash(ID,btn)
+    async function SendIDToSlash(ID,btn)
     {
         btn.disabled = true;
 
         var Order=FindOrderByID(ID);
-        if(Order && OLib.ConfTera)
+        if(Order)
         {
+            SendBtMap["Slash"+Order.ID]=1;
             var Order2=CopyObjKeys({},Order);
             delete Order2.SignArr;
+            var ArrRet=[];
             for(var i=0;i<Order.SignArr.length;i++)
             {
                 var Item=Order.SignArr[i];
                 if(!Item.Slash)
                 {
-                    Order2.Notary=Item.Notary;
-                    MSendCall(OLib.ConfTera.NotarySmartAcc,"SlashProof",Order2,Item.Sign,0);
+                    if(IsTera(Order))
+                    {
+                        Order2.Notary=Item.Notary;
+                        MSendCall(0,"SlashProof",Order2,Item.Sign,+idAddrTera.value);
+                    }
+                    else
+                    {
+                        var Buf=[];
+                        EncodeOrder(Buf,Order,0);
+
+                        var SignStr=GetHexFromArr(Item.Sign);
+                        var StrR=SignStr.substr(0,32*2);
+                        var StrS=SignStr.substr(32*2,32*2);
+                        var StrV=SignStr.substr(64*2,2);
+
+                        var Ret = SendEth("SlashProof",ToBytes(Buf),0,ToBytes(StrR),ToBytes(StrS),ToBytes(StrV));
+                        ArrRet.push(Ret);
+                    }
+                    Item.Slash=1;
                 }
+            }
+
+            for(var i=0;i<ArrRet.length;i++)
+            {
+                console.log(await Ret);
+                delete OLib.MAP_ETH[ID];
             }
         }
     }
@@ -232,8 +390,11 @@
         var Order=FindOrderByID(ID);
         if(Order && OLib.ConfTera)
         {
-            if(Order.Mode==1)
-                MSendCall(OLib.ConfTera.NotarySmartAcc,"CancelOrder",{ID:Order.ID},[],0);
+            SendBtMap["Refund"+Order.ID]=1;
+            if(IsTera(Order))
+            {
+                MSendCall(0,"CancelOrder",{ID:Order.ID},[],+idAddrTera.value);
+            }
             else
             {
                 var Ret=await SendEth("CancelOrder",ID);
@@ -250,7 +411,14 @@
         var Order=FindOrderByID(ID);
         if(Order && OLib.ConfTera)
         {
-            if(Order.Mode==2)
+            SendBtMap["Sign"+Order.ID]=1;
+            if(IsTera(Order))
+            {
+                var SignArr=GetSignOrder(Order,glPrivKey);
+                MSendCall(0,"NotarySign",{ID:Order.ID, Notary:0},SignArr,+idAddrTera.value);
+
+            }
+            else
             {
 
                 var SignStr=GetHexFromArr(GetSignOrder(Order,glPrivKey));
@@ -258,7 +426,7 @@
                 var StrS=SignStr.substr(32*2,32*2);
                 var StrV=SignStr.substr(64*2,2);
 
-                console.log(StrR,StrS,StrV);
+                //console.log(StrR,StrS,StrV);
 
                 var Ret=await SendEth("NotarySign",ID,0,ToBytes(StrR),ToBytes(StrS),ToBytes(StrV));
                 console.log(Ret);
@@ -269,9 +437,11 @@
 
 
     //--------------------------------------------------------------------------- TERA Send
+
+
     async function SendCoins()
     {
-        await ["idMode","idAddrTera","idAddrEth","idAmount"].forEach(function(id)
+        await ["idToken","idBridge","idAddrTera","idAddrEth","idAmount"].forEach(function(id)
         {
             if(!$(id).value)
             {
@@ -283,13 +453,16 @@
 
         var Conf=await GetConfTera();
 
-        if(!Conf.NOTARY.NotaryArr)
+        if(!Conf.Common.NotaryArr)
             return SetError("Error Notary dapp params");
 
-        let Order=FormToOrder(Conf);
+        let Order=await FormToOrder(Conf);
         if(!Order)
             return;
-        var option=idMode.options[Order.Mode-1];
+
+
+
+        var option=idBridge.options[idBridge.options.selectedIndex];
         DoConfirm("Send "+option.innerText,CreateSendHTML(Order),async function()
         {
             SelectTabMenu("mMonitor");
@@ -301,14 +474,14 @@
             Order.UID=UID;
             CurrentFormUID=Order.UID;
 
-            Order.ID=GetCurrentBlockNumByTime()*1000;
+            Order.ID=GetCurrentBlockNumByTime()*100000;
             Order.Pending=1;
             Order.SignArr=[];
             MapPending[Order.UID]=Order;
 
             UpdateOrderList(1);
 
-            if(Order.Mode==2)//Mode Eth to Tera
+            if(Order.Mode%2==0)//Mode Eth to Tera
             {
                 try
                 {
@@ -321,7 +494,7 @@
             }
             else
             {
-                if(!MSendCall(+idAddrTera.value,"SendOrder",Order,[],+idAddrTera.value))
+                if(!MSendCall(+idAddrTera.value,"AddOrder",Order,[],+idAddrTera.value))
                     return;
             }
         });
@@ -332,18 +505,18 @@
     }
 
 
-    function FormToOrder(Conf)
+    async function FormToOrder(Conf)
     {
         if(!Conf)
             Conf=OLib.ConfTera;
         if(!Conf)
             return;
 
-        var NOTARY=Conf.NOTARY;
 
         var Order=
             {
-                Mode:+idMode.value,
+                Mode:(+idBridge.value)%10,
+                Gate:Math.floor((+idBridge.value)/10),
                 AddrTera:+idAddrTera.value,
                 AddrEth:idAddrEth.value,
                 Amount:Round(+idAmount.value),
@@ -351,13 +524,29 @@
                 Description:idDescription.value,
             }
 
+
+
         Order.AddrEth=ToBytes(Order.AddrEth).substr(2);
         Order.NotaryFee=0;
-        if(Order.Mode==1)
+
+        var Gate;
+        var Common;
+        if(Order.Mode==1 || TESTMODE)
         {
-            var NeedFee=NOTARY.Rate*NOTARY.NotaryFee*(Order.Amount+Order.TransferFee);
-            Order.NotaryFee=Round(Math.max(NeedFee,NOTARY.MinNotaryFee));
+            Common=Conf.Common;
+            Gate=GetCurrentGateInfo();
         }
+        else
+        {
+            Gate=await GetGateEth(Order.Gate);
+            Common=await GetCommonEth();
+        }
+        if(!Gate)
+            return;
+
+
+        var NeedFee=Common.NotaryFee*(Order.Amount+Order.TransferFee);
+        Order.NotaryFee=Round(Math.max(NeedFee,Gate.Rate*Common.MinNotaryFee));
         return  Order;
     }
 
@@ -367,7 +556,7 @@
         Arr[(Order.Mode+1)%2]=Order.AddrTera;
         Arr[(Order.Mode)%2]=Order.AddrEth;
 
-        var TokenName=CurrencyName(USER_ACCOUNT_MAP[Order.AddrTera].Currency);
+        var TokenName=GetTokenByGate(Order.Gate);
 
         var Str=`
         <DIV align='left'>
@@ -375,7 +564,7 @@
         <txtr><txth>From:</txth><txtshort>${Arr[0]}</txtshort></txtr>
         <txtr><txth>To:</txth><txtshort>${Arr[1]}</txtshort></txtr>
         <txtr><txth>Amount:</txth><txtvo>${Order.Amount}</txtvo>
-        <txthfee class="${Order.Mode==2?'hide':''}">Transfer:<txtvo>${Order.TransferFee}</txtvo>Notary:<txtvo>${Order.NotaryFee}</txtvo></txthfee></txtr>
+        <txthfee class="${Order.Mode%2==1?'':'hide'}">Transfer:<txtvo>${Order.TransferFee}</txtvo></txthfee><txthfee>Notary:<txtvo>${Order.NotaryFee}</txtvo></txthfee></txtr>
         <txtr><txth>Description:</txth><txtv>${Order.Description}</txtv></txtr>
         <hr>
         <txtr><txth>TOTAL:</txth><txtvo>${Round(Order.Amount+Order.NotaryFee+Order.TransferFee)}</txtvo>${TokenName}</txtr>
@@ -411,12 +600,12 @@
         var Str=GetShortAddr(Item.AddrEth);
         return "<a class='olink' target='_blank' onclick='ViewOrder(" + Item.ID + ")'>" + Str + "</a>";
     }
-    function GetDirectOrder(Item)
+    function GetDirectOrder(Order)
     {
-        if(Item.Mode==2)
-            return '<span class="orange">←<span>';
-        else
+        if(IsTera(Order))
             return '<span class="green">→<span>';
+        else
+            return '<span class="orange">←<span>';
 
     }
     function Short8(Value)
@@ -425,21 +614,16 @@
             return "-";
         return Value.substr(0,8);
     }
-    function ViewOrder(ID)
-    {
-        var Order=FindOrderByID(ID);
-        if(Order)
-        {
-            console.log(Order);
-        }
-    }
 
     function SetStateOrder(Item)
     {
         SetOrderPeriod(Item);
+
+        var Net=OLib.NetMapByGate[Item.Gate];
+        if(Net)
+            Item.ChainName=Net.ChainName;
+
         Item.Err=0;
-        if(!Item.Mode)
-            Item.Mode=1;
 
         if(Item.PeriodNum>=4)
         {
@@ -447,7 +631,7 @@
         }
         else
         {
-            if(Item.Mode==1)
+            if(IsTera(Item))
                 SetStateOrder1(Item);
             else
                 SetStateOrder2(Item);
@@ -481,6 +665,9 @@
         {
             if(Item.Pending)
                 Item.State="Pending";
+            else
+            if(Item.Process===0 && Item.PeriodNum===2)
+                Item.State="ToSign";
             else
             if(Item.Process===1 && Item.InEth!==null)
                 Item.State="ToEth";
@@ -529,7 +716,7 @@
             if(Item.Process===0 && Item.PeriodNum===2)
                 Item.State="ToSign";
             else
-            if(Item.Process===1)
+            if(Item.Process===1 && !Item.InTera)
                 Item.State="ToTera";
             else
             if(Item.Process===0 && Item.PeriodNum>=3)//Checking
@@ -547,24 +734,62 @@
 
     function GetBtActOrder(Item)
     {
+
         //Process
         var Str="-";
-        if(Item.State==="ToEth" && OLib.WasMetaMaskInstalled)
+        var CheckEth=0;
+        var Arr;
+        if(Item.State==="ToEth")
         {
-            var color="green";
-            if(SendEthMap[Item.ID])
-                color="gray";
-            Str='<button class="btaction '+color+'" onclick="SendIDToEth('+Item.ID+',this)">Send</button>';
+            CheckEth=2;
+            Arr=["Send","SendIDToEth","green"];
         }
         else
         if(Item.State==="ToSlash" && Item.PeriodNum>=3)
-            Str='<button class="btaction red" onclick="SendIDToSlash('+Item.ID+',this)">Slash</button>';
+        {
+            CheckEth=1;
+            Arr=["Slash","SendIDToSlash","red"];
+        }
         else
         if(Item.State==="ToRefund")
-            Str='<button class="btaction orange" onclick="SendIDToRefund('+Item.ID+',this)">Refund</button>';
+        {
+            CheckEth=1;
+            Arr=["Refund","SendIDToRefund","orange"];
+        }
         else
-        if(Item.State==="ToSign")
-            Str='<button class="btaction green" onclick="SendIDToSign('+Item.ID+',this)">Sign</button>';
+        if(Item.State==="ToSign" && OwnerMode)
+        {
+            CheckEth=1;
+            Arr=["Sign","SendIDToSign","blue"];
+        }
+        else
+        if(Item.State==="ToTera")
+        {
+            Arr=["Send","SendIDToTera","green"];
+        }
+
+        if(CheckEth && OLib.WasMetaMaskInstalled)
+        {
+            if(CheckEth==2 || CheckEth==1 && !IsTera(Item))
+            {
+                var Net=OLib.NetMapByGate[Item.Gate];
+                if(!Net || Net.EthNetworkId!=OLib.EthNetworkId)
+                    return Str;
+            }
+        }
+
+        if(Arr)
+        {
+            var Name=Arr[0];
+            var Method=Arr[1];
+            var color=Arr[2];
+            if(SendBtMap[Name+Item.ID])
+                color="gray";
+
+
+            Str='<button class="btaction '+color+'" onclick="'+Method+'('+Item.ID+',this)">'+Name+'</button>';
+        }
+
 
         return Str;
     }
@@ -582,12 +807,6 @@
     //--------------------------------------------------------------------------- List orders
     async function UpdateOrderList(OnlyTera,bInit)
     {
-        if(bInit && TESTMODE)
-        {
-            SmartGetEmpty();
-            SmartSetInfo()
-        }
-
         var Map={};
 
         //Pending
@@ -598,7 +817,8 @@
         }
 
 
-        var Arr=await GetOrderListTera(0);
+        var Arr;
+        Arr=await GetOrderListTera(OnlyTera);
         for(var i=0;i<Arr.length;i++)
         {
             var Order=Arr[i];
@@ -609,46 +829,33 @@
             Map[Order.ID]=Order;
         }
 
-        Arr=await GetOrderListTera(1);
-        for(var i=0;i<Arr.length;i++)
-        {
-            var Order=Arr[i];
-            Order.InTera=1;
-            if(!Map[Order.ID])
-            {
-                Order.HashTera=GetHexFromArr(GetOrderHash(Order));
-                Map[Order.ID]=Order;
-            }
-        }
 
         //Eth
         if(!OnlyTera)
         {
-            for(var Mode=1;Mode<=2;Mode++)
+            Arr=await GetOrderListEth();
+            for(var i=0;i<Arr.length;i++)
             {
-                Arr=await GetOrderListEth(Mode);
-                for(var i=0;i<Arr.length;i++)
+                var Order;
+                var OrderEth=Arr[i];
+                var Order=Map[OrderEth.ID];
+                if(!Order)
                 {
-                    var Order;
-                    var OrderEth=Arr[i];
-                    OrderEth.Mode=Mode;
-                    var Order=Map[OrderEth.ID];
-                    if(!Order)
-                    {
-                        Map[OrderEth.ID]=OrderEth;
-                        Order=OrderEth;
-                    }
-                    SetAttrEthOrder(Order,OrderEth);
+                    Map[OrderEth.ID]=OrderEth;
+                    Order=OrderEth;
                 }
+                SetAttrEthOrder(Order,OrderEth);
             }
         }
         Arr=[];
         for(var ID in Map)
         {
             var Order=Map[ID];
+            //Order.Num=1e12-Order.ID;
             Order.Num=Order.ID;
 
             SetStateOrder(Order);
+            Order.Token=GetTokenByGate(Order.Gate);
 
             Arr.push(Order);
         }
@@ -668,6 +875,10 @@
         Order.EthPrevID=OrderEth.PrevID;
         if(!OrderEth.NotaryFee)
             OrderEth.NotaryFee=0;
+
+        if(!IsTera(Order))
+            Order.NotaryFee=OrderEth.NotaryFee;
+        //Order.ETH=OrderEth;
 
     }
 
@@ -711,7 +922,8 @@
 
 
             }
-        SetGridData(Arr,"idOrders",undefined,MonitorMode!==PrevMonitorMode,1);
+        //SetGridData(Arr,"idOrders",undefined,MonitorMode!==PrevMonitorMode,0);
+        SetGridData(Arr,"idOrders",0,1,1);
         PrevMonitorMode=MonitorMode;
     }
 
@@ -727,49 +939,323 @@
         SaveValues();
     }
 
+    function GetCurrentGateInfo()
+    {
+        var Data=MapCurNum[idToken.value];
+        if(!Data)
+            return;
+
+        var Gate=Data.Gates[Math.floor((+idBridge.value)/10)];
+        return Gate;
+    }
+
+    function GetTokenByGate(Gate)
+    {
+        if(!OLib.ConfTera)
+            return "";
+        var Item=OLib.ConfTera.Gates[Gate];
+        if(Item)
+            return Item.TokenName;
+        else
+            return "";
+    }
+
+    function UpdateMapCurNum(Conf)
+    {
+        //console.log(Conf.Gates);
+        var Count=0;
+        MapCurNum={};
+        for(var key in Conf.Gates)
+        {
+            var Item=Conf.Gates[key];
+            if(!Item.Pause && Item.Rate)
+            {
+                var Data=MapCurNum[Item.TokenId];
+                if(!Data)
+                {
+                    Data={Gates:{},Name:Item.TokenName};
+                    MapCurNum[Item.TokenId]=Data;
+
+                    if(!Data.Name)
+                        Data.Name=CurrencyName(Item.TokenId);
+
+                }
+                Data.Gates[key]=Item;
+                Count++;
+            }
+        }
+        return Count;
+    }
+
+    var WasSetTokenList=0;
+    async function SetTokenList()
+    {
+        if(WasSetTokenList)
+            return;
+
+        var Conf=await GetConfTera();
+        if(!Conf)
+            return;
+
+        if(!UpdateMapCurNum(Conf))
+            return;
+
+        var Arr=[];
+        for(var key in MapCurNum)
+        {
+            var Item=MapCurNum[key];
+            var Value={value:key, text:Item.Name};
+            Arr.push(Value);
+        }
+
+        FillSelect("idToken",Arr);
+        SetChannelList();
+        WasSetTokenList=1;
+
+
+    }
+    async function SetChannelList()
+    {
+        if(!OLib.EthNetworkId)
+            await FillEthNetwork();
+
+
+        var Data=MapCurNum[idToken.value];
+        if(!Data)
+        {
+            idBridge.options.length=0;
+            return;
+        }
+
+
+        var Arr=[];
+        for(var key in Data.Gates)
+        {
+            var Item=Data.Gates[key];
+            Arr.push({value:(+key)*10+1, text: "TERA → "+Item.ChainName});
+            var Item2={value:(+key)*10+2, text: Item.ChainName+" → TERA", disabled:Item.EthNetworkId!=OLib.EthNetworkId};
+            if(Item2.disabled)
+                Item2.text += " - need connect";
+            Arr.push(Item2);
+        }
+        FillSelect("idBridge",Arr);
+
+        for(var i=0;i<Arr.length;i++)
+        {
+            idBridge.options[i].disabled=Arr[i].disabled;
+        }
+
+        OnSelectBridge();
+        CheckArr();
+    }
+
+
+    function CreateAccount()
+    {
+        var Gate=GetCurrentGateInfo();
+        if(!Gate)
+            return;
+        CreateNewAccount(Gate.TokenId);
+    }
+
+    async function SetVisibleAddCoin()
+    {
+        var bView=0;
+        var Gate=GetCurrentGateInfo();
+        if(Gate)
+        {
+            var GateEth=await GetGateEth(Gate.ID,1);
+            if(GateEth && GateEth.TokenAddr!="0x0000000000000000000000000000000000000000")
+                bView=1;
+        }
+
+        SetVisibleBlock("idAddMetamask",bView);
+    }
+
+    async function OnSelectToken()
+    {
+        SetChannelList();
+        SetVisibleAddCoin();
+    }
+    async function OnSelectBridge()
+    {
+        SetVisibleBlock("idBlockTrFee",idBridge.value%2==1);
+        SetVisibleAddCoin();
+    }
+
+
     //--------------------------------------------------------------------------- Owner smart
     function SmartGetEmpty()
     {
         var Params=
             {
-                CommonNum:0,
                 EthSmartAddr:"",
-                // TokenPoolAcc:0,
-                NotarySmartAcc:0,
+                SignLib:0,
+                Common:
+                    {
+                        Pause:0,
+                        SignPeriod:14400,//период для подписи (в блоках)
+                        TransferPeriod:28800,//устаревание ордеров (в блоках)
+
+                        //комиссии за подпись (в Терах)
+                        NotaryFee:0.01,
+                        MinNotaryFee:0,
+                        MinDeposit:100000, //депозит в Терах
+
+                        //подписанты (валидаторы)
+                        NotaryArr:[{Addr:"0000000000000000",AccDeposit:0,SumDeposit:0, CanSign:1, BlockFrom:0, BlockTo:0, Gates:[1,2,3]}],
+                        MinSign:1,//требуемое минимальное число подписей
+
+                        //штрафные санкции
+                        SlashRate:1,
+                        MinSlash:1000,
+
+                    },
+                Blockchains:
+                    {
+                        "NAME"://имя блокчейна
+                            {
+                                EthNetworkId:0,//eth номер сети
+                                EthSmartAddr:"",//адрес смарт-контракта
+                                OrderEnum:0,//глобальный номер блокчейна - влияет на создание ID ордера (в наших терминах: 0=Tera, 1=Eth, 2=BSC, до 99)
+                            }
+                    },
+                Gates:
+                    {
+                        "0":
+                            {
+                                ID:0,//глобальный уникальный номер канала
+                                BlockchainID:0,
+                                OrderEnum:0,//глобальный номер блокчейна - влияет на создание ID ордера (в наших терминах: 0=Tera, 1=Eth, 2=BSC, до 99)
+                                ChainName:"NAME",
+                                //EthNetworkId:0,
+                                TokenId:0,//номер валюты (номер даппа)
+                                TokenName:"",
+                                TokenAcc:0,//номер счета с монетами
+                                Rate:1,//курс к Тера для расчета слэшинга или минимальной комисии
+                                Pause:0,
+                            }
+                    },
+                Orders:
+                    {
+                        HeadID:0,
+                        TailID:0,
+
+                        NewOrderID:0,
+                        WorkNum:0,
+                    }
+
             };
+
+
         if(TESTMODE)
         {
-            Params.NotarySmartAcc=602;
-            Params.Channel=606;//652;
+            Params.SignLib=283;
+            Params.Common.SignPeriod=100;
+            Params.Common.TransferPeriod=200;
+            Params.EthSmartAddr="";//"0xbc4d60aa28ab4e8f51c469917a7d2b5cba46c740";
+            Params.Common.NotaryArr=[{Addr:"5201A60DE4328750EC18C6BEA49B2DA10A82013F",AccDeposit:0,SumDeposit:110000, CanSign:1, BlockFrom:0, BlockTo:0, Gates:[1,2,3]}];
+            Params.Blockchains=
+                {
+                    "ETH":
+                        {
+                            EthNetworkId:4,//main 1
+                            EthSmartAddr:"",
+                            OrderEnum:1,
+                        },
+                    "BSC":
+                        {
+                            EthNetworkId:97,//main 56
+                            EthSmartAddr:"",
+                            OrderEnum:2,
+                        }
+                };
+
+            Params.Gates=
+                {
+                    "1":
+                        {
+                            ID:1,
+                            ChainName:"ETH",
+                            TokenId:0,
+                            TokenName: "TERA",
+                            TokenAcc:107,
+                            Rate:1,
+                            Pause:0
+                        },
+                    "2":
+                        {
+                            ID:2,
+                            ChainName:"BSC",
+                            TokenId:0,
+                            TokenName: "TERA",
+                            TokenAcc:107,
+                            Rate:1,
+                            Pause:0
+                        },
+                    "3":
+                        {
+                            ID:3,
+                            ChainName:"ETH",
+                            TokenId:1,
+                            TokenName:"USD",
+                            TokenAcc:101,
+                            Rate:0.03,
+                            Pause:0
+                        },
+                }
         }
-        idList2.value=JSON.stringify(Params,"",4);
+        idSettings.value=JSON.stringify(Params,"",4);
     }
 
-    function SmartSetInfo()
+    function SmartSetConf()
     {
-        if(!idList2.value)
+        if(!idSettings.value)
             return SetError("Need set params");
-        var Params=JSON.parse(idList2.value);
-        delete Params.NOTARY;
-        SendCall(0,"SetInfo",Params,[],SMART.Owner);
+        var Conf=JSON.parse(idSettings.value);
+        MSendCall(0,"SetCommon",Conf,[],SMART.Owner);
+    }
+    function SmartResetOrders()
+    {
+        MSendCall(0,"ResetOrders",{},[],SMART.Owner);
     }
 
 
 
-    async function SmartGetInfo(bReset)
+
+    async function SmartGetConf()
     {
         OLibClearCahce();
 
         var Conf=await GetConfTera();
-        idList2.value=JSON.stringify(Conf,"",4);
+        if(Conf)
+            for(var key in Conf.Gates)
+            {
+                var Item=Conf.Gates[key];
+                delete Item.EthNetworkId;
+                delete Item.EthSmartAddr;
+                delete Item.OrderEnum;
+            }
+
+        idSettings.value=JSON.stringify(Conf,"",4);
     }
 
-    //---------------------------------------------------------------------------
-
-    function SetVisibleSendForm()
+    async function SmartGetProxy()
     {
-        SetVisibleBlock("idBlockTrFee",idMode.value==1);
+        var Data=await CallTeraProxy(0,"GetProxy",{});
+        console.log("Data",Data);
+        idSettings.value=JSON.stringify(Data,"",4);
     }
+    function SmartSetProxy()
+    {
+        if(!idSettings.value)
+            return SetError("Need set params");
+        var Params=JSON.parse(idSettings.value);
+        MSendCall(0,"SetProxy",Params,[],SMART.Owner);
+    }
+
+
+
 
     //--------------------------------------------------------------------------- Private key support
     function SetPubKey()
@@ -823,8 +1309,13 @@
     {
         LoadFromStorageByArr(SaveIdArr,function (Key)
         {
-            SetVisibleSendForm();
-            CalcSecret();
+            OnSelectBridge();
+
+            if(OwnerMode)
+                CalcSecret();
+
+            SetChannelList();
+
         },1);
     }
     function PrepareSavingItems()
@@ -836,13 +1327,78 @@
         }
     }
 
+
+
+
+    //--------------------------------------------------------------------------- TEST MODE
+    var TestNum=1;
+    function GetTestOrder()
+    {
+
+        TestNum+=2;
+        var AddrTo = new Uint8Array(20);
+        window.crypto.getRandomValues(AddrTo);
+
+        var Order={Gate:1, AddrTera:100, AddrEth:AddrTo, TokenID:[], Amount:random(1000),TransferFee:3, NotaryFee:1, Description:"Super test "+TestNum,  Process:0,PrevID:0,NextID:0};
+        Order.AddrEth=GetHexFromArr(Order.AddrEth);
+        return Order;
+    }
+
+    var LastTestOrder;
+    function TestSlashProof()
+    {
+
+        var Order;
+        if(LastTestOrder)
+            Order=LastTestOrder;
+        else
+        {
+            Order=GetTestOrder();
+            Order.Amount=1;
+            Order.TransferFee=0;
+            Order.Gate=3;
+            var BlockNum=INFO.CurBlockNum-OLib.ConfTera.Common.SignPeriod-5;
+            Order.ID=BlockNum*100000;
+            LastTestOrder=Order;
+        }
+
+        var SignArr=GetSignOrder(Order,glPrivKey);
+        Order.Notary=0;
+        MSendCall(0,"SlashProof",Order,SignArr,+idAddrTera.value);
+    }
+
+    var LastTestOrder2;
+    function TestExecOrder()
+    {
+        var Order;
+        if(LastTestOrder2)
+            Order=LastTestOrder2;
+        else
+        {
+            Order=GetTestOrder();
+            var BlockNum=INFO.CurBlockNum-5;
+            Order.ID=BlockNum*100000+1000*1;
+            LastTestOrder2=Order;
+        }
+
+        var SignArr=GetSignOrder(Order,glPrivKey);
+
+        Order.SignArr=[{Notary:0,Slash:0,Sign:SignArr}];
+        MSendCall(0,"ExecOrder",Order,[],+idAddrTera.value);
+    }
+
+    function OpenHistoryPage(Num)
+    {
+        OpenLink("/history.html#"+Num);
+    }
+
+
 </script>
 
 
 
 
 <style>
-
     :root
     {
         --colorTabB1: rgba(255, 255, 255, 0.6);
@@ -900,18 +1456,34 @@
         margin:10px 2px 30px 2px;
     }
 
-    .raw
+
+    .row
     {
         margin: 10px 5px;
         font-size: 16px;
+
+        display: -webkit-box;
+        display: -webkit-flex;
+        display: -ms-flexbox;
+        display: flex;
+        -webkit-box-align: end;
+        -webkit-align-items: flex-end;
+        -ms-flex-align: end;
+        align-items: flex-end;
     }
-    .raw-head
+
+    row_cell
+    {
+        width:99%;
+    }
+
+    .row-head
     {
         display: block;
         margin: 2px;
         text-align: left;
     }
-    .raw-item
+    .row-item
     {
         background-color2: #CCC;
         margin: 2px;
@@ -924,16 +1496,16 @@
         color:#1e21cb;
         font-weight: bold;
     }
-    .raw2
+    .row2
     {
         display: flex;
         margin: 10px 5px;
         font-size: 16px;
     }
-    .rawtr
+
+    .marginl10
     {
-        width: 30%;
-        margin: auto;
+        margin-left:10px;
     }
 
     txtr
@@ -1013,10 +1585,19 @@
         width: 60px;
         vertical-align:top;
     }
+    .grid td.sum
+    {
+        text-align: right;
+    }
+
 
     .red
     {
         color:red;
+    }
+    .blue
+    {
+        color:lightblue;
     }
     .green
     {
@@ -1045,6 +1626,21 @@
         border:0;
         padding:0;
         margin:0;
+        height:20px;
+    }
+
+    .logo
+    {
+        width: 100%;
+    }
+    option
+    {
+        text-align:center;
+        font-family:monospace;
+    }
+    .olink
+    {
+        cursor:pointer;
     }
 
 </style>
@@ -1052,18 +1648,15 @@
 <div align="center" style="width:98%">
     <div align="left" style="max-width:800px">
 
-        <div align='center' id="idMain" style="display:none">
+        <div align='center' id="idMain" style="display:none;">
 
             <menu>
-
                 <item data-ref="mMonitor" id="mMonitor">
                     MONITOR
                 </item>
-
                 <item data-ref="mSend" id="mSend">
                     SEND
                 </item>
-
                 <item data-ref="mInfo" id="mInfo">
                     INFO
                 </item>
@@ -1082,7 +1675,14 @@
 
                 <!--Common TERA-ETH Bridge information-->
 
-                <button style="width:150px" onclick="AddCoin()">Link Tera to Metamask</button>
+
+                <img align="center" class="logo" src="https://terafoundation.org/files/terahub/TeraHub-2.jpg" alt="TERA-HUB">
+                <div align="center">
+                    <a href="https://t.me/terahub">Telegram channel</a>
+                    <a href="https://youtu.be/-kOWXWKadh8">Description video</a>
+                    <a href="https://github.com/terablockchain/terahub">Github</a>
+                    <!--progr76@gmail.com-->
+                </div>
 
             </content>
 
@@ -1118,15 +1718,20 @@
 
                 <table id="idOrders" class="grid">
                     <tr>
+
+                        <th id="Item.ChainName">Net</th>
                         <th id="(GetBtActOrder(Item))">Action</th>
                         <th id="Item.State">State</th>
-                        <th id="(ColoredAmount(Item))" class="sum bold">Amount</th>
-                        <!--<th id="Item.Channel">Channel</th>-->
-                        <th id="Item.NotaryFee" class="sum bold">Fee Notary</th>
-                        <th id="Item.TransferFee" class="sum bold">Fee Transfer</th>
-                        <th id="Item.AddrTera" class="">Addr Tera</th>
+                        <th id="(RetHistoryAccount(Item,'AddrTera'))" class="">Addr Tera</th>
                         <th id="(GetDirectOrder(Item))" class="">↔</th>
                         <th id="(GetViewOrder(Item))" class="">Addr Eth</th>
+
+                        <th id="(ColoredAmount(Item))" class="sum bold">Amount</th>
+                        <!--<th id="Item.Gate">Gate</th>-->
+                        <th id="Item.TransferFee" class="sum bold">Fee Transfer</th>
+                        <th id="Item.NotaryFee" class="sum bold">Fee Notary</th>
+                        <th id="Item.Token" class="">Token</th>
+
                         <th id="Item.Description" class="desc">Description</th>
                         <th id="Item.SignArr.length" class="">Notary signs</th>
 
@@ -1149,44 +1754,63 @@
 
             <content data-ref="mSend" style="max-width:400px">
                 <div align="left">
-                    <div class="raw">
-                        <div class="raw-head">Bridge mode:</div>
-                        <select size="1" id="idMode" class="raw-item" style="width: 120px" onchange="SetVisibleSendForm()">
-                            <option value="1">TERA → ETH</option>
-                            <option value="2">ETH  → TERA</option>
-                        </select>
-                    </div>
-                    <div class="raw">
-                        <div class="raw-head">Address Tera:</div>
-                        <select size="1" id="idAddrTera" class="raw-item" style="width:100%;">
-                            <option value="0">Loading...</option>
-                        </select>
-                    </div>
-                    <div class="raw">
-                        <div class="raw-head">Address Eth:
-                            <button onclick="SetEthCurAddres()" class="set">
-                                <img src="./img/load.svg">
-                            </button>
-                        </div>
+                    <div class="row">
+                        <row_cell style="width:120px">
+                            <div class="row-head">Token:</div>
+                            <select size="1" id="idToken" class="row-item" style="width: 120px" onchange="OnSelectToken()">
+                                <option value="0">Loading...</option>
+                            </select>
+                        </row_cell>
+                        <row_cell class="marginl10" style="width:120px;">
+                            <div class="row-head">Bridge:</div>
+                            <select size="1" id="idBridge" class="row-item" style="width: 120px" onchange="OnSelectBridge()">
+                                <option value="0">Loading...</option>
+                            </select>
+                        </row_cell>
 
-                        <input type="string" id="idAddrEth" class="raw-item">
+                        <button id="idAddMetamask" class="row-item" style="width:180px;" onclick="AddCoin()">Add to Metamask...</button>
+
                     </div>
-                    <div class="raw2">
-                        <div class="raw">
-                            <div class="raw-head">Amount:</div>
-                            <input type="number" id="idAmount" class="raw-item amount" style="text-align:right;">
-                        </div>
-                        <div id="idBlockTrFee" class="raw rawtr">
-                            <div class="raw-head">Transfer fee:</div>
-                            <input type="number" id="idTransferFee" class="raw-item amount" style="text-align:right;">
-                        </div>
+                    <div class="row">
+                        <row_cell>
+                            <div class="row-head">Address Tera:</div>
+                            <select size="1" id="idAddrTera" class="row-item">
+                                <option value="0">Loading...</option>
+                            </select>
+                        </row_cell>
+                        <button class="row-item" style="width:120px; " onclick="CreateAccount()">New account</button>
+                    </div>
+                    <div class="row">
+                        <row_cell>
+                            <div class="row-head">Address Eth:
+                                <button onclick="SetEthCurAddres()" class="set">
+                                    <img src="./img/load.svg">
+                                </button>
+                            </div>
+
+                            <input type="string" id="idAddrEth" class="row-item">
+                        </row_cell>
                     </div>
 
-                    <div class="raw">
-                        <div class="raw-head">Description:</div>
-                        <TEXTAREA id="idDescription" rows="2" cols="30" class="raw-item"></TEXTAREA>
+                    <div class="row">
+                        <row_cell>
+                            <div class="row-head">Amount:</div>
+                            <input type="number" id="idAmount" class="row-item amount" style="text-align:right;">
+                        </row_cell>
+
+                        <row_cell id="idBlockTrFee" class="marginl10">
+                            <div class="row-head">Transfer fee:</div>
+                            <input type="number" id="idTransferFee" class="row-item amount" style="text-align:right;width:95%;">
+                        </row_cell>
                     </div>
-                    <div class="raw">
+
+                    <div class="row">
+                        <row_cell>
+                            <div class="row-head">Description:</div>
+                            <TEXTAREA id="idDescription" class="row-item" style="height:60px;"></TEXTAREA>
+                        </row_cell>
+                    </div>
+                    <div class="row">
                         <button onclick="SendCoins()">SEND</button>
                         <button onclick="ClearSend()">CLEAR</button>
                     </div>
@@ -1210,14 +1834,24 @@
 
                 </menu>
 
+                <div id="idTest1">
+                    <button onclick="TestSlashProof()">SlashProof</button>
+                    <button onclick="TestExecOrder()">ExecOrder</button>
+                    <button onclick="AddChainParameter()">BNB-TEST</button>
+                </div>
+
+
                 <content data-ref="sSmart">
                     <button onclick="SmartGetEmpty()">Empty</button>
-                    <button onclick="SmartGetInfo()">Get</button>
-                    <button onclick="SmartSetInfo()">Set smart</button>
+                    <button onclick="SmartGetConf()">Get conf</button>
+                    <button onclick="SmartSetConf()">Set conf</button>
+                    <button onclick="SmartResetOrders()">Reset orders</button>
                     <br>
 
-                    <TEXTAREA id="idList2" rows="20" cols="40" style="width:99%"></TEXTAREA>
-                    <input type="number" id="idAccGetInfo">
+                    <TEXTAREA id="idSettings" rows="20" cols="40" style="width:99%"></TEXTAREA>
+                    <BR>
+                    <button onclick="SmartGetProxy()">Get proxy</button>
+                    <button onclick="SmartSetProxy()">Set proxy</button>
                 </content>
 
                 <content data-ref="mLog">
