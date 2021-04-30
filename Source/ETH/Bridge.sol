@@ -49,7 +49,7 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
         uint OrderNum=0;
         uint BlockNum=(block.timestamp-ConfCommon.FIRST_TIME_BLOCK)/ConfCommon.CONSENSUS_PERIOD_TIME;
 
-        uint PrevBlockNum=ConfData.NewOrderID/1000;
+        uint PrevBlockNum=ConfData.NewOrderID/100000;
         if(PrevBlockNum>=BlockNum)
             OrderNum = (ConfData.NewOrderID%1000) + 1;
 
@@ -415,6 +415,9 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
             SendOrMint(Gate, AddrEth, Order.TokenID, Amount);
 
         }
+
+        ConfData.WorkNum++;
+
     }
 
 

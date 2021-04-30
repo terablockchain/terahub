@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: TERA
 
 pragma solidity ^0.7.3;
+pragma experimental ABIEncoderV2;
 
 
 import "./OwnerLib.sol";
@@ -145,6 +146,26 @@ contract OrderLib is OwnerLib
         if(Order.ID==0)
             return "";
         return GetBufFromOrder(Order,BUF_EXTERN_FULL);
+    }
+
+    function GetOrderList(uint48 ID, uint16 Count) public view returns(bytes[] memory Arr)
+    {
+        TypeOrder memory Order;
+        Arr=new bytes[](Count);
+        uint32 Num=0;
+        uint48 NextID=ID;
+        while(NextID>0)
+        {
+            Order=LoadOrder(NextID);
+            if(Order.ID==0)
+                break;
+            Arr[Num]=GetBufFromOrder(Order,BUF_EXTERN_FULL);
+            NextID=Order.NextID;
+
+            Num++;
+            if(Num>=Count)
+                break;
+        }
     }
 
 
