@@ -156,6 +156,8 @@ contract ConvertLib is DataLib
     function UintFromBytes(bytes memory Data)  internal pure returns (uint RetArr)
     {
         uint ShrCount;
+        if(Data.length==0)
+            return 0;
         if(Data.length<32)
             ShrCount=8*(32-Data.length);
 
@@ -164,6 +166,23 @@ contract ConvertLib is DataLib
             RetArr := mload(add(Data, 0x20))
             RetArr := shr(ShrCount,RetArr)
         }
+    }
+    function UintFromBytes10(bytes memory Data)  internal pure returns (uint Ret)
+    {
+        uint256 value = UintFromBytes(Data);
+
+        uint256 Mult=1;
+        while (value != 0)
+        {
+            uint256 B=value%16;
+            require(B<10, "UintFromBytes10: Received a character in the range A-F");
+
+            Ret = Ret + B*Mult;
+
+            Mult = Mult*10;
+            value = value >> 4;
+        }
+
     }
 
     function GetUint1(uint Data) internal pure returns (uint8 Num)

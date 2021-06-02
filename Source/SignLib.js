@@ -43,7 +43,7 @@ function CheckSign(Order,AddrNotary,ParamSign,bNoErr)
 
 
 
-    //check sign by etherium style
+    //check sign by ethereum style
     if(ParamSign.length!==65)
     {
         var Err="Error length sign arr="+ParamSign.length;

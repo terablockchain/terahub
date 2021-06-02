@@ -32,8 +32,8 @@ contract ERC1155 is Context, ERC165, IERC1155, IERC1155MetadataURI {
     /**
      * @dev See {_setURI}.
      */
-    //constructor (string memory uri_) {
-    function _initERC(string memory uri_) internal
+    constructor (string memory uri_)
+    //function _initERC(string memory uri_) internal
     {
         _setURI(uri_);
     }
@@ -407,16 +407,15 @@ contract ERC1155 is Context, ERC165, IERC1155, IERC1155MetadataURI {
 contract TokenERC1155 is ERC1155
 {
     address SmartOwner;
-    constructor()
+
+    function decimals() public pure returns (uint8) {
+        return 9;//<-----------------------------------------------------------------------------------
+    }
+
+    constructor() ERC1155("http://terahub.io/nft/")
     {
-        //SmartOwner = msg.sender;
-        //_initERC("TERA-1155","TERA1155");
-        _initERC("terafoundation.org/tera-1155");
-
-        SmartOwner=msg.sender;
-
-        SmartMint(SmartOwner,0);
-
+        //SmartOwner=msg.sender;
+        //SmartMint(SmartOwner,0);
     }
 
     modifier OnlyOwner()
@@ -424,6 +423,15 @@ contract TokenERC1155 is ERC1155
         require(msg.sender == SmartOwner, "Need only owner access");
         _;
     }
+
+
+    function SetURI(string memory _BaseURI) public OnlyOwner
+    {
+        _setURI(_BaseURI);
+    }
+
+
+
 
     function SetSmart(address newOwner) public
     {
@@ -436,17 +444,26 @@ contract TokenERC1155 is ERC1155
         }
     }
 
-    function SmartMint(address account, uint256 id) public OnlyOwner
-    {
-        //_safeMint(account,id);
-        _mint(account,id, 5*1e18, "");
-    }
+    //    function SmartMint(address account, uint256 id) public OnlyOwner
+//    {
+//        //_safeMint(account,id);
+//        _mint(account,id, 5*1e18, "");
+//    }
 
 //    function SmartBurn(uint256 id) public OnlyOwner
 //    {
 //        _burn(id);
 //    }
+    function SmartMint(address account, uint256 id, uint amount) public OnlyOwner
+    {
+        _mint(account,id, amount, "");
+    }
+
+    function SmartBurn(address account, uint256 id, uint256 amount) public OnlyOwner
+    {
+        _burn(account,id, amount);
+    }
 
 }
 
-//todo кажется Метамаск не поддерживает этот стандарт
+//todo  Метамаск не поддерживает этот стандарт

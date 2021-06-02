@@ -20,9 +20,11 @@ interface IOwnTokenERC
 
 contract BridgeERC20 is OwnerLib
 {
+
+
     function SendOrMint(TypeGate memory Gate, address AddrEth, bytes memory OrderTokenID, uint256 Amount) internal
     {
-        uint TokenID=UintFromBytes(OrderTokenID);
+        uint TokenID=GetTokenID(OrderTokenID);
 
         if(Gate.WORK_MODE==ERC_MINT)
         {
@@ -32,34 +34,33 @@ contract BridgeERC20 is OwnerLib
         {
             if(Gate.TypeERC==0)//eth
             {
-                //payable(AddrEth).transfer(Amount*1e9);//9 - > 18
                 payable(AddrEth).transfer(Amount);
             }
             else
-            if(Gate.TypeERC==1)//20
+            if(Gate.TypeERC==20)
             {
                 IERC20(Gate.TokenAddr).transfer(AddrEth, Amount);
-                //IERC20(Gate.TokenAddr).transferFrom(address(this), AddrEth, Amount);
             }
             else
-            if(Gate.TypeERC==2)//721
+            if(Gate.TypeERC==721)
             {
                 IERC721(Gate.TokenAddr).safeTransferFrom(address(this), AddrEth, TokenID);
                 //IERC721(Gate.TokenAddr).transferFrom(address(this), AddrEth, TokenID);
             }
             else
-            if(Gate.TypeERC==3)//1155
+            if(Gate.TypeERC==1155)
             {
                 IERC1155(Gate.TokenAddr).safeTransferFrom(address(this), AddrEth, TokenID, Amount, "");
             }
-            //TODO 1155 BatchTransfer
+
         }
     }
 
 
     function ReceiveOrBurn(TypeGate memory Gate, address AddrEth, bytes memory OrderTokenID, uint256 Amount) internal
     {
-        uint TokenID=UintFromBytes(OrderTokenID);
+        uint TokenID=GetTokenID(OrderTokenID);
+
         if(Gate.WORK_MODE==ERC_MINT)
         {
             IOwnTokenERC(Gate.TokenAddr).SmartBurn(AddrEth, TokenID, Amount);
@@ -71,25 +72,32 @@ contract BridgeERC20 is OwnerLib
                 require(uint64(msg.value) >= Amount,"Error receive Amount");
             }
             else
-            if(Gate.TypeERC==1)//20
+            if(Gate.TypeERC==20)
             {
                 //надо ли проверять IERC20.allowance() ??
                 IERC20(Gate.TokenAddr).transferFrom(msg.sender, address(this), Amount);
             }
             else
-            if(Gate.TypeERC==2)//721
+            if(Gate.TypeERC==721)
             {
                 IERC721(Gate.TokenAddr).transferFrom(msg.sender, address(this), TokenID);
             }
             else
-            if(Gate.TypeERC==3)//1155
+            if(Gate.TypeERC==1155)
             {
                 IERC1155(Gate.TokenAddr).safeTransferFrom(msg.sender, address(this), TokenID, Amount, "");
             }
-            //TODO 1155 BatchTransfer
+
         }
     }
 
+    function GetTokenID(bytes memory Data)  internal pure returns (uint TokenID)
+    {
+        if(Data.length<32)
+            TokenID=UintFromBytes10(Data);
+        else
+            TokenID=UintFromBytes(Data);
+    }
 
 
     //------------------------------------------------------------------------ Gate

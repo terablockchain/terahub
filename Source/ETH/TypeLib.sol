@@ -27,9 +27,9 @@ contract TypeLib
         uint8 NOTARY_COUNT;
         uint8 MIN_SIGN_COUNT;
 
-        uint48 MinNotaryFee;//мин. комиссия с точностью 1e-9   //1e-6
-        uint48 NotaryFee;//коэффициент нотариальной комисии с точностью 1e-9  //1e-3
-        uint48 MinDeposit;//мин депозит с точностью 1e-9   // в целых монетых Eth
+        uint48 MinNotaryFee;//мин. комиссия с точностью 1e-9
+        uint48 NotaryFee;//коэффициент нотариальной комисии с точностью 1e-9
+        uint48 MinDeposit;//мин депозит с точностью 1e-9
 
 
         uint16 SlashRate;//множитель слэшинга (тока целые множители)
@@ -41,16 +41,16 @@ contract TypeLib
 
     struct TypeGate
     {
-        uint8  WORK_MODE;//0 - pause, 1 - skip, 2 - own mint (from tera), 3 - other token
-        uint8  TypeERC;//0 - eth, 1-erc20, 2-erc721, 3-1155
-        uint48 Rate;//курс монеты к eth (в полях Amount и TransferFee) с точностью 1e-9
         address TokenAddr;
+        uint8  WORK_MODE;//0 - pause, 1 - skip, 2 - own mint (from tera), 3 - other token
+        uint16  TypeERC;//0 - eth, 20-erc20, 721-erc721, 1155-1155
+        uint48 Rate;//курс монеты к eth (в полях Amount и TransferFee) с точностью 1e-9
         uint8 Decimals;
     }
 
     struct TypeConf
     {
-        uint48  WorkNum;//!
+        uint48  WorkNum;
         uint48  HeadOrderID;
         uint48  TailOrderID;
         uint48  NewOrderID;
@@ -80,7 +80,7 @@ contract TypeLib
     struct TypeOrder
     {
         uint32 Gate;
-        uint48 ID;//!
+        uint48 ID;
         uint32  AddrTera;
         bytes20 AddrEth;
         bytes TokenID;

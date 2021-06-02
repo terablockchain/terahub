@@ -96,15 +96,20 @@ contract OrderLib is OwnerLib
     //------------------------------------------------------------------------
 
 
-//    function GetOrderHeader(uint48 ID) public view returns(bytes32)
-//    {
-//        uint Header=LoadHeaderBytes(ID);
-//        return bytes32(Header);
-//    }
-//    function GetBody(uint48 BodyID,uint Length) public view returns(bytes memory)
-//    {
-//        return LoadBodyBytes(BodyID,Length);
-//    }
+    function GetOrderHeader(uint48 ID) public view returns(bytes32)
+    {
+        uint Header=LoadHeaderBytes(ID);
+        return bytes32(Header);
+    }
+    function GetBody(uint48 BodyID,uint Length) public view returns(bytes memory)
+    {
+        return LoadBodyBytes(BodyID,Length);
+    }
+    function GetOrderObject(uint48 ID) public view returns(TypeOrder memory)
+    {
+        return LoadOrder(ID);
+    }
+
 
     //----------------------------------------------------------------------------------------------- SAVE/LOAD ORDER
     function SaveOrderHeader(TypeOrder memory Order)internal
@@ -114,11 +119,11 @@ contract OrderLib is OwnerLib
     }
     function FillOrderHeader(TypeOrder memory Order,uint FData)internal pure
     {
-        Order.BodyLength = uint16((FData>>240) & 0xFFFFFFFFFF);
-        Order.PrevID     = uint48((FData>>192) & 0xFFFFFFFFFF);
-        Order.NextID     = uint48((FData>>144) & 0xFFFFFFFFFF);
-        Order.BodyID     = uint48((FData>>96) & 0xFFFFFFFFFF);
-        Order.Process    = uint8((FData>>88) & 0xFF);
+        Order.BodyLength = uint16((FData>>240) & 0xFFFFFFFFFFFF);
+        Order.PrevID     = uint48((FData>>192) & 0xFFFFFFFFFFFF);
+        Order.NextID     = uint48((FData>>144) & 0xFFFFFFFFFFFF);
+        Order.BodyID     = uint48((FData>>96)  & 0xFFFFFFFFFFFF);
+        Order.Process    = uint8((FData>>88)   & 0xFF);
     }
 
     function LoadOrder(uint48 ID) internal view returns(TypeOrder memory)
@@ -212,8 +217,8 @@ contract OrderLib is OwnerLib
                     if(Conf.HeadOrderID==Conf.TailOrderID)
                         Conf.HeadOrderID=0;
 
-                    Order.BodyID=uint48((HeaderLast>>96) & 0xFFFFFFFFFF);//BodyID
-                    Conf.TailOrderID=uint48((HeaderLast>>192) & 0xFFFFFFFFFF);//PrevID
+                    Order.BodyID=uint48((HeaderLast>>96) & 0xFFFFFFFFFFFF);//BodyID
+                    Conf.TailOrderID=uint48((HeaderLast>>192) & 0xFFFFFFFFFFFF);//PrevID
                 }
             }
         }
@@ -230,7 +235,7 @@ contract OrderLib is OwnerLib
             require(HeaderFirst>0,"Error read HeadOrderID");
 
 //            //обнуляем предыдущее значение PrevID - но вообще оно и так всегда пустое
-//            uint TemplatePrevID = 0xFFFFFFFFFF << 192;
+//            uint TemplatePrevID = 0xFFFFFFFFFFFF << 192;
 //            HeaderFirst = HeaderFirst | TemplatePrevID;
 //            HeaderFirst = HeaderFirst ^ TemplatePrevID;
             //новая ссылка

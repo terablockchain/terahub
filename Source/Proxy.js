@@ -1,5 +1,3 @@
-//Proxy smart contract for NotaryPool.js, Bridge.js and etc
-
 
 function OnGet()//getting coins
 {
@@ -23,12 +21,12 @@ function OnGet()//getting coins
 
 function ReadStorage()
 {
-    return ReadValue("INFO");
+    return ReadValue("PROXY");
 }
 
 function WriteStorage(Item)
 {
-    WriteValue("INFO",Item);
+    WriteValue("PROXY",Item);
 }
 
 
@@ -58,7 +56,7 @@ function Call(Params,ParamArr)
 
 
 "public"
-function SetInfo(Params)
+function SetProxy(Params)
 {
     if(context.FromNum!==context.Smart.Owner)
         throw "Access is only allowed from Owner account";
@@ -66,8 +64,8 @@ function SetInfo(Params)
 
     //---------------------
     //developing mode check
-    var DEVELOPING_MODE_PERIOD=90*24*3600/3;
-    var Info=GetInfo(Params);
+    var DEVELOPING_MODE_PERIOD=365*24*3600/3;
+    var Info=GetProxy(Params);
     if(Info && Info.StartDeveloperMode)
         if(context.BlockNum-Info.StartDeveloperMode > DEVELOPING_MODE_PERIOD)
             throw "Smart contract in immutable mode";
@@ -80,7 +78,7 @@ function SetInfo(Params)
 }
 
 "public"
-function GetInfo(Params)
+function GetProxy(Params)
 {
     return ReadStorage(Params);
 }

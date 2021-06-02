@@ -5,10 +5,9 @@ pragma solidity ^0.7.3;
 
 
 import "./TypeLib.sol";
-//import "./TokenERC20.sol";
 
 
-//серилизация/десерилизация с хранилищем
+
 
 contract DataLib is TypeLib
 {

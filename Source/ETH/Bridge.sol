@@ -6,7 +6,6 @@ import "./TokenLib.sol";
 import "./OrderLib.sol";
 import "./NotaryLib.sol";
 
-import "./ProxyBridge.sol";
 
 
 pragma experimental ABIEncoderV2;
@@ -61,39 +60,52 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
 
 
 
-        Order.NotaryFee=uint64(uint(ConfCommon.NotaryFee)*(Order.Amount+Order.TransferFee)/1e9);
+        uint256 Amount=uint256(Order.Amount);
 
-        //перевод MinNotaryFee в валюту ордера
-        uint MinNotaryFee=uint(Gate.Rate)*ConfCommon.MinNotaryFee/1e9;
-        if(Order.NotaryFee<MinNotaryFee)
-            Order.NotaryFee=uint64(MinNotaryFee);
+        if(Gate.TypeERC==721)
+        {
+            //комиссия в газе и всегда равна MinNotaryFee
+            Order.NotaryFee=ConfCommon.MinNotaryFee;
+
+            //не учитываем в Amount комиссию - ее получили газом
+            //переводим точность комиссии к точности 1e18
+            uint256 Fee=uint256(Order.NotaryFee+Order.TransferFee)*1e9;//9 - > 18
+            require(uint64(msg.value) >= Fee,"Error receive Fee");
+
+        }
+        else
+        {
+            Order.NotaryFee=uint64(uint(ConfCommon.NotaryFee)*(Order.Amount+Order.TransferFee)/1e9);
+
+            //перевод MinNotaryFee в валюту ордера
+            uint MinNotaryFee=uint(Gate.Rate)*ConfCommon.MinNotaryFee/1e9;
+            if(Order.NotaryFee<MinNotaryFee)
+                Order.NotaryFee=uint64(MinNotaryFee);
+
+            Amount += uint256(Order.TransferFee + Order.NotaryFee);
+        }
 
 
+        //переводим точность к точности монеты
+        Amount = Amount*(10**Gate.Decimals)/1e9;
 
         //transfer
         if(Gate.WORK_MODE>ERC_SKIP)
         {
-
-            uint256 Amount=uint256(Order.Amount + Order.TransferFee + Order.NotaryFee);
-
-            //переводим точность к точности монеты
-            Amount = Amount*(10**Gate.Decimals)/1e9;
-
             ReceiveOrBurn(Gate, AddrEth, Order.TokenID, Amount);
-            //Token.SmartBurn(AddrEth, Amount);
         }
 
         ConfData.WorkNum++;
 
 
         //fill notary tx
-        OrderCreateEmptyBody(Order);
+        CreateEmptyOrderBody(Order);
 
         //save
         SaveNewOrder(ConfData,Order,0);
     }
 
-    function OrderCreateEmptyBody(TypeOrder memory Order)internal view
+    function CreateEmptyOrderBody(TypeOrder memory Order)internal view
     {
         Order.SignArr=new TypeSigner[](ConfCommon.NOTARY_COUNT);
         for(uint8 i=0;i<ConfCommon.NOTARY_COUNT;i++)
@@ -231,7 +243,7 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
         {
             NewOrder=1;
 
-            OrderCreateEmptyBody(Order);
+            CreateEmptyOrderBody(Order);
         }
         else
         {
@@ -276,8 +288,9 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
         //10
         //перевод валюты ордера в Eth
         uint SlashSum=uint(ConfCommon.SlashRate)*SlashAmount*1e9/uint(Gate.Rate);
-        if(SlashSum<ConfCommon.MinSlash)
+        if(Gate.TypeERC==721 || SlashSum<ConfCommon.MinSlash)
             SlashSum=ConfCommon.MinSlash;
+
 
         //отнимаем из депозита
         if(SlashSum>=ItemNotary.SumDeposit)
@@ -333,7 +346,20 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
 
         if(Gate.WORK_MODE>ERC_SKIP)
         {
-            uint256 Amount=uint256(Order.Amount + Order.TransferFee + Order.NotaryFee);
+            uint256 Amount=uint256(Order.Amount);
+
+            if(Gate.TypeERC==721)
+            {
+                uint256 Fee=uint256(Order.TransferFee + Order.NotaryFee)*1e9;//9 - > 18
+                if(Fee>0)
+                {
+                    payable(AddrEth).transfer(Fee);
+                }
+            }
+            else
+            {
+                Amount += uint256(Order.TransferFee + Order.NotaryFee);
+            }
 
             //переводим точность к точности монеты
             Amount = Amount*(10**Gate.Decimals)/1e9;
@@ -341,10 +367,6 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
             SendOrMint(Gate, AddrEth, Order.TokenID, Amount);
         }
 
-//        if(Order.NotaryFee>0)
-//        {
-//            payable(AddrEth).transfer(Order.NotaryFee*1e9);//9 - > 18
-//        }
 
         //5
         ConfData.WorkNum++;
@@ -396,6 +418,13 @@ contract Bridge is  OrderLib, BridgeERC20, NotaryLib
             if(Order.TransferFee>0)
             {
                 uint256 Fee=uint256(Order.TransferFee);
+
+                if(Gate.TypeERC==721)
+                {
+                    //возврат газа?? но там были Тера
+                    //payable(AddrEth).transfer(Fee*1e9);//9 - > 18
+                }
+                else
                 if(tx.origin==AddrEth)
                 {
                     Amount+=Fee;

@@ -17,29 +17,29 @@
             {
                 CommonNum:0,
             };
-        idList.value=JSON.stringify(Params,"",4);
+        idSettings.value=JSON.stringify(Params,"",4);
     }
 
-    function DoSetInfo()
+    function DoSetProxy()
     {
-        if(!idList.value)
+        if(!idSettings.value)
             return SetError("Need set params");
-        var Params=JSON.parse(idList.value);
-        SendCall(0,"SetInfo",Params,[],SMART.Owner);
+        var Params=JSON.parse(idSettings.value);
+        SendCall(0,"SetProxy",Params,[],SMART.Owner);
     }
 
 
 
-    function DoGetInfo()
+    function DoGetProxy()
     {
-        idList.value="";
-        StaticCall(0,"GetInfo",{},[],function (Err,Value)
+        idSettings.value="";
+        StaticCall(0,"GetProxy",{},[],function (Err,Value)
         {
             if(Err || !Value)
             {
                 return;
             }
-            idList.value=JSON.stringify(Value,"",4);
+            idSettings.value=JSON.stringify(Value,"",4);
         });
 
     }
@@ -89,14 +89,20 @@
     <div align="left" style="max-width:400px">
 
         <button onclick="DoGetEmpty()">Empty</button>
-        <button onclick="DoGetInfo()">Get</button>
-        <button onclick="DoSetInfo()">Set</button>
+        <button onclick="DoGetProxy()">Get</button>
+        <button onclick="DoSetProxy()">Set</button>
         <br>
 
-        <TEXTAREA id="idList" rows="30" cols="40" style="width:99%">
-    </TEXTAREA>
+        <TEXTAREA id="idSettings" rows="30" cols="40" style="width:99%"></TEXTAREA>
 
     </div>
 </div>
+
+
+
+
+
+
+
 
 
