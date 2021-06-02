@@ -43,7 +43,7 @@ function CheckSign(Order,AddrNotary,ParamSign,bNoErr)
 
 
 
-    //check sign by ethereum style
+    //check sign by etherium style
     if(ParamSign.length!==65)
     {
         var Err="Error length sign arr="+ParamSign.length;
@@ -98,7 +98,7 @@ function GetOrderHash(Order)
 
     var Buf=GetSignArrFromOrder(Order);
 
-    //var Hash=sha256(Buf); sha256 сломан
+
 
     var Hash=keccak256(Buf);
 
@@ -139,10 +139,10 @@ function DecodeOrder(Buf,bFull)
     Buf.len=0;
 
     Order.Gate=DecodeUint(Buf,4);
-    Order.ID=DecodeUint(Buf,6);//!
+    Order.ID=DecodeUint(Buf,6);
     Order.AddrTera=DecodeUint(Buf,4);
     Order.AddrEth=GetHexFromArr(DecodeArrConst(Buf,20));
-    Order.TokenID=GetHexFromArr(DecodeArr(Buf));
+    Order.TokenID=DecodeHex10(Buf);
     Order.Amount=DecodeUint(Buf,8)/1e9;
     Order.TransferFee=DecodeUint(Buf,8)/1e9;
     Order.Description=DecodeStr(Buf);
@@ -178,10 +178,10 @@ function DecodeOrder(Buf,bFull)
 function EncodeOrder(Buf,Order,bFull,MaxSignCount)
 {
     EncodeUint(Buf,Order.Gate,4);
-    EncodeUint(Buf,Order.ID,6);//!
+    EncodeUint(Buf,Order.ID,6);
     EncodeUint(Buf,Order.AddrTera,4);
     EncodeArrConst(Buf,Order.AddrEth,20);
-    EncodeArr(Buf,Order.TokenID);
+    EncodeHex10(Buf,Order.TokenID);
     EncodeUint(Buf,FromFloat(Order.Amount),8);
     EncodeUint(Buf,FromFloat(Order.TransferFee),8);
     EncodeStr(Buf,Order.Description);
@@ -253,6 +253,44 @@ function DecodeUint(arr,Bytes)
     }
     return Data;
 }
+
+function ZTrimTokenID(Str)
+{
+    while(Str.length!==64 && Str.length>1 && Str.substr(0,1)==="0")
+        Str=Str.substr(1);
+    return Str;
+}
+
+function DecodeHex10(arr)
+{
+    var arr2=DecodeArr(arr);
+    var Str=GetHexFromArr(arr2);
+
+    return ZTrimTokenID(Str);
+
+
+    // var Str;
+    // if(!arr2.length)
+    //     return "";
+
+    // if(arr2.length<=6)
+    // {
+    //     //to 10 string
+    //     arr2.len=0;
+    //     var Num=DecodeUint(arr2,6);
+    //     Str=String(Num);
+
+
+    // }
+    // else
+    // {
+    //     //to 16 string
+    //     Str=GetHexFromArr(arr2);
+    // }
+
+    // return Str;
+}
+
 function DecodeArr(arr)
 {
     var length = arr[arr.len + 1] + arr[arr.len] * 256;
@@ -326,11 +364,54 @@ function EncodeUint(arr,Num,Bytes)
         //var b=n-1;
         arr[len + b] = Data & 0xFF;
 
-        if(n===4)
+        if(n%4===0)
             Data = Math.floor(Num / 4294967296);
         else
             Data = Data>>8;
     }
+}
+
+function EncodeHex10(arr,HexStr)
+{
+    if(HexStr.length%2===1)
+    {
+        //add left "0"
+        HexStr="0"+HexStr;
+    }
+    return EncodeArr(arr,HexStr);
+
+    // if(!HexStr || !HexStr.length)
+    // {
+    //     //zero arr
+    //     return EncodeArr(arr,[]);
+    // }
+
+    // if(typeof HexStr!=="string")
+    //     throw "EncodeHex10: Need string, HexStr="+HexStr;
+
+
+    // //console.log(HexStr);
+
+    // var arr2;
+    // if(HexStr.length<=15)
+    // {
+    //     //Token ID is 10 string
+    //     arr2=[];
+    //     EncodeUint(arr2,+HexStr,6);
+    // }
+    // else
+    // {
+    //     if(HexStr.length%2===1)
+    //     {
+    //         //add left "0"
+    //         HexStr="0"+HexStr;
+    //     }
+
+    //     //Token ID is 16 string
+    //     arr2=ArrFromBytes(HexStr);
+    // }
+
+    // EncodeArr(arr,arr2);
 }
 
 function EncodeArr(arr,arr2)
@@ -348,6 +429,7 @@ function EncodeArr(arr,arr2)
 
     EncodeArrConst(arr,arr2,length);
 }
+
 
 function EncodeArrConst(arr,arr2,length)
 {
@@ -531,26 +613,6 @@ function Test_GetBuf(Order)
     EncodeOrder(Buf,Order,1);
     return Buf;
 }
-
-"public"
-function Test_GetSignBuf(Params)
-{
-    var Order=Params.Order;
-    return GetSignArrFromOrder(Order);
-}
-
-"public"
-function Test_DecodeOrder(Params)
-{
-    return DecodeOrder(ArrFromBytes(Params.Buf),1);
-}
-
-"public"
-function Test_DecodeSign(Params)
-{
-    return DecodeOrder(ArrFromBytes(Params.Buf),0);
-}
-
 
 
 

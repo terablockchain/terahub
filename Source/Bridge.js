@@ -1,34 +1,34 @@
+//Smart-contract:NotaryPool
 
 
+
+// function OnGet()//getting coins
+// {
+//     if(context.SmartMode)
+//     {
+//         var Item=context.Description;
+//         if(typeof Item==="object")
+//         {
+//             var Map={};
+//             return Map[Item.cmd](Item);
+//         }
+//     }
+//     else
+//     if(context.Description.substr(0,1)==="{")
+//     {
+//         if(SetState())
+//             return;
+//     }
+// }
 
 //--------------------------------------
 //BRIDGE Smart contract
 //--------------------------------------
-//Smart-contract:NotaryPool
 
-
-function OnGet()//getting coins
-{
-    if(context.SmartMode)
-    {
-        var Item=context.Description;
-        if(typeof Item==="object")
-        {
-            var Map={};
-            return Map[Item.cmd](Item);
-        }
-    }
-    else
-    if(context.Description.substr(0,1)==="{")
-    {
-        if(SetState())
-            return;
-    }
-}
 
 //-------------------------------------- СТРУКТУРА ХРАНЕНИЯ
-// Адресация канала "CHANNEL2":SmartAccount
-// Адресация ордера "ORDER2":ID
+//TODO форматирование используется только для Order
+// Адресация ордера "ORDER":ID
 
 // function FormatCommon()
 // {
@@ -73,7 +73,7 @@ function FormatOrder()
 {
     return  {
         //Header:
-        Gate:"uint32", ID:"uint",AddrTera:"uint32",AddrEth:"str",TokenID:"tr",Amount:"double",TransferFee:"double",Description:"str",
+        Gate:"uint32", ID:"uint",AddrTera:"uint32",AddrEth:"str",TokenID:"str",Amount:"double",TransferFee:"double",Description:"str",
         //Signs:
         SignArr:[{Notary:"byte",Sign:"arr65",Slash:"byte"}],
         //State:
@@ -108,45 +108,50 @@ function ReadOrder(ID)//todo
 function WriteOrder(Order)
 {
     if(!Order.ID)
-        throw "Error Order.ID";
+        throw "WriteOrder Error Order.ID="+Order.ID;
+
+    if(Order.TokenID && Order.TokenID.length>64)
+        throw "WriteOrder Error TokenID length: "+Order.TokenID;
 
     WriteValue("ORDER:"+Order.ID, Order, FormatOrder());
 }
 function DeleteOrder(Order)
 {
     if(!Order.ID)
-        throw "Error Order.ID";
+        throw "DeleteOrder Error Order.ID="+Order.ID;
     RemoveValue("ORDER:"+Order.ID);
 }
 
 
-
-function WriteOrderWithRefs(Order,Common,Set)
+function WriteOrderWithRefs(Order,Common,Conf)
 {
     //удаляем последний ордер если он в находится старом периоде
-    if(Set.TailID>0)
+    if(Conf.TailID>0)
     {
-        var Period=OrderInPeriod(Common, Set.TailID);
+        var Period=OrderInPeriod(Common, Conf.TailID);
         if(Period>=4)
         {
-            var OrderLast=ReadOrder(Set.TailID);
-            if(OrderLast>0)
+            var OrderLast=ReadOrder(Conf.TailID);
+            if(OrderLast)
             {
-                DeleteOrder(Set.TailID,0);//удаляем его
-                if(Set.HeadID==Set.TailID)
-                    Set.HeadID=0;
-                Set.TailID=OrderLast.PrevID;
+                DeleteOrder(OrderLast);//удаляем его
+                if(Conf.HeadID==OrderLast.ID)
+                    Conf.HeadID=0;
+                Conf.TailID=OrderLast.PrevID;
             }
         }
     }
 
-    Order.NextID=Set.HeadID;
+    if(Order.ID==Conf.HeadID)
+        throw "Error set Order.NextID = "+Conf.HeadID+" in Order.ID="+Order.ID;
+
+    Order.NextID=Conf.HeadID;
     WriteOrder(Order);
 
     //записываем ссылку на этот ордер в предыдущем ордере
-    if(Set.HeadID>0)
+    if(Conf.HeadID>0)
     {
-        var Order3=ReadOrder(Set.HeadID);
+        var Order3=ReadOrder(Conf.HeadID);
         if(Order3)
         {
             Order3.PrevID=Order.ID;
@@ -155,17 +160,16 @@ function WriteOrderWithRefs(Order,Common,Set)
     }
 
 
-    Set.HeadID=Order.ID;
-    if(!Set.TailID)
+    Conf.HeadID=Order.ID;
+    if(!Conf.TailID)
     {
-        Set.TailID=Set.HeadID;
+        Conf.TailID=Conf.HeadID;
     }
 
 
 
-    //Внимание: запись Set должна быть при записи Info в вызывающей функции
+    //Внимание: запись Conf должна быть при записи Info в вызывающей функции
 }
-
 
 function CheckSum(Sum)
 {
@@ -176,6 +180,78 @@ function CheckSum(Sum)
 
     throw "Error, need type number: "+Sum;
 }
+
+function TrimTokenID(Str)
+{
+    if(Str.length===64)
+        return Str;
+
+    if(Str && Str.length>15)
+        Str = Str.substr(Str.length-15);
+
+    while(Str.length>1 && Str.substr(0,1)==="0")
+        Str=Str.substr(1);
+    return Str;
+}
+
+//-------------------------------------- Token Sends
+function MoveToken(Info,Gate, From,To,TokenID,Amount,Description)
+{
+    if(Gate.IsERC || Gate.IsNFT)
+    {
+        //erc token mode
+        if(Gate.IsNFT && !TokenID)
+            throw "Error TokenID="+TokenID;
+
+        if(context.Account.Num!==From)
+            throw "Error From = "+From+"/"+context.Account.Num;
+
+        if(Gate.IsNFT)
+            TokenID=TrimTokenID(TokenID);
+
+        if(From===context.Smart.Account)//mint
+            Send(Info.CoinStore, 0, {cmd:"MintBridge", Account:To, Token:Gate.TokenName, ID:TokenID, Amount:Amount, Description:Description});
+        else
+        if(To===context.Smart.Account)//burn - не храним монеты
+            Move(context.Smart.Account,Info.CoinStore, 0, {cmd:"BurnBridge", Account:From, Token:Gate.TokenName, ID:TokenID, Amount:Amount, Description:Description});
+        else
+            throw "Error MoveToken operation: "+From+"->"+To;
+
+        // if(From===context.Smart.Account)//mint
+        //     Send(Info.CoinStore, 0, {cmd:"MintBridge", Token:Gate.TokenName, Account:context.Smart.Account, ID:TokenID, Amount:Amount});
+
+        // Send(Info.CoinStore, 0, {cmd:"Transfer", Token:Gate.TokenName, To:To, ID:TokenID, Amount:Amount, Description:Description});
+
+        // if(To===context.Smart.Account)//burn - не храним монеты
+        //     Move(context.Smart.Account,Info.CoinStore, 0, {cmd:"BurnBridge", Token:Gate.TokenName, ID:TokenID, Amount:Amount});
+
+
+    }
+    else
+    {
+        //RunEvent("MoveToken not erc");
+
+        //native token mode
+        Move(From,To, COIN_FROM_FLOAT2(Amount), Description);
+    }
+}
+
+
+"public"
+function Transfer(Params)
+{
+    CheckSenderPermission();
+
+    var Info=ReadConf();
+    if(!Info)
+        throw "Error ReadConf";
+
+    Params.cmd="Transfer";
+    Send(Info.CoinStore, 0, Params);
+    Event(Params);
+}
+
+
 
 //-------------------------------------- добавление нового ордера
 //Order: {From,To,Amount,TransferFee,Description}
@@ -199,8 +275,9 @@ function AddOrder(Data)
     var NotaryFee=Data.NotaryFee;
 
 
-    if(typeof Data.AddrTera!=="number" || !Data.AddrTera)
-        throw "Error 'AddrTera' value";
+    Data.AddrTera=context.Account.Num;
+    // if(typeof Data.AddrTera!=="number" || !Data.AddrTera)
+    //     throw "Error 'AddrTera' value";
     if(!Data.AddrEth.length)
         throw "Error 'To' value";
     if(typeof Data.Description!=="string" || Data.Description.length>300)
@@ -224,9 +301,10 @@ function AddOrder(Data)
 
     //расчет номера ордера внутри блока
     var OrderNum=0;
-    var PrevBlockNum=GetOrderBlockNum(Orders.NewOrderID);
-    if(PrevBlockNum===context.BlockNum)
+    var PrevBlockNum=GetOrderBlockNum({ID:Orders.NewOrderID});
+    if(PrevBlockNum==context.BlockNum)
         OrderNum = (Orders.NewOrderID%1000)+1;
+
     if(OrderNum>=1000)
         throw "Big tx num, try later, OrderNum="+OrderNum;
 
@@ -246,6 +324,7 @@ function AddOrder(Data)
             Amount:Data.Amount,
             TransferFee:Data.TransferFee,
             Description:Data.Description,
+            TokenID:Data.TokenID,
 
             Process:0,
             NotaryFee:NotaryFee,
@@ -254,26 +333,39 @@ function AddOrder(Data)
 
 
 
-    //Notary fee
-    var NeedFee=Common.NotaryFee*(Order.Amount+Order.TransferFee);
-    //перевод MinNotaryFee в валюту ордера
-    Order.NotaryFee=Round(Math.max(NeedFee,Gate.Rate*Common.MinNotaryFee));
-
-    var Total=Round(Order.Amount+Order.TransferFee+Order.NotaryFee);
 
     //--------------------------------------Token transfer
-    //все в одной сумме
+
+    var Total;
+    if(Gate.IsNFT)
+    {
+        //комиссия всегда в Терах и всегда равна MinNotaryFee
+        Order.NotaryFee=Common.MinNotaryFee;
+        var Fee=Order.NotaryFee+Order.TransferFee;
+        if(Fee)
+            Send(context.Smart.Account, COIN_FROM_FLOAT2(Fee), "Fee");
+
+        Total=Round(Order.Amount);
+    }
+    else
+    {
+        //Notary fee
+        var NeedFee=Common.NotaryFee*(Order.Amount+Order.TransferFee);
+
+        //перевод MinNotaryFee в валюту ордера
+        Order.NotaryFee=Round(Math.max(NeedFee,Gate.Rate*Common.MinNotaryFee));
+
+        //все в одной сумме
+        Total=Round(Order.Amount+Order.TransferFee+Order.NotaryFee);
+    }
+
+
+
     var TokenAcc=Gate.TokenAcc;
     if(!TokenAcc)
         TokenAcc=context.Smart.Account;
-    Send(TokenAcc, COIN_FROM_FLOAT2(Total), Order.Description);
+    MoveToken(Info,Gate, Order.AddrTera, TokenAcc, Order.TokenID, Total, Order.Description);
     //--------------------------------------
-
-    // var NeedFee=Common.NotaryFee*(Order.Amount+Order.TransferFee);
-    // Event("NeedFee:"+NeedFee+"  Got NotaryFee:"+Order.NotaryFee);
-    // NeedFee=Round(Math.max(NeedFee,Gate.Rate*Common.MinNotaryFee));
-    // if(NeedFee && NeedFee-Order.NotaryFee>1e-9)
-    //     throw "Error Notary fee="+Order.NotaryFee+" Fee must: "+NeedFee;
 
 
 
@@ -288,12 +380,12 @@ function AddOrder(Data)
 
 
 
-
-
 //--------------------------------------подпись валидатора Params:{ID,Notary}, ParamSign:arr65
 "public"
 function NotarySign(Params, ParamSign)
 {
+    CheckBaseCall();
+
     //1.Проверяем параметры, что ордер не устарел (SignPeriod)
     //2.Проверка разрешения вызова - нотариус в списке подписантов
     //3.Проверяем что у валидатора есть минимальный депозит (SumDeposit/MinDeposit)
@@ -378,6 +470,8 @@ function NotarySign(Params, ParamSign)
 "public"
 function SlashProof(Params,ParamSign)
 {
+    CheckBaseCall();
+
     //1.Проверяем валидность ID (только ордера созданные в этом блокчейне)
     //2.Проверяем валидность канала
     //3.Проверяем валидность номера нотариуса
@@ -393,7 +487,7 @@ function SlashProof(Params,ParamSign)
 
     CheckSum(Params.Amount);
     CheckSum(Params.TransferFee);
-    CheckSum(Params.NotaryFee);
+    //CheckSum(Params.NotaryFee);
 
     //1
     CheckOrderID(Params.ID,0);
@@ -467,8 +561,8 @@ function SlashProof(Params,ParamSign)
     //9
     //перевод валюты ордера в Тера
     var SlashSum=Common.SlashRate*Math.max(OrderDB.Amount+OrderDB.TransferFee, Params.Amount+Params.TransferFee)/Gate.Rate;
-    if(SlashSum<Gate.Rate*Common.MinSlash)
-        SlashSum=Gate.Rate*Common.MinSlash;
+    if(Gate.IsNFT || SlashSum<Common.MinSlash)
+        SlashSum=Common.MinSlash;
 
     //отнимаем из депозита
     InfoItem.SumDeposit-=SlashSum;
@@ -515,6 +609,8 @@ function DistributeNotaryFee(Common,Order)
 "public"
 function CancelOrder(Params)
 {
+    CheckBaseCall();
+
     //1. Проверяем время ордера больше SignPeriod
     //2. Проверяем что Process===0
     //3. Устанавливаем в ордере признак обработанности Process=100
@@ -557,11 +653,30 @@ function CancelOrder(Params)
 
     //4
     //--------------------------------------Token transfer
-    var Total=Order.Amount+Order.TransferFee+Order.NotaryFee;
+    var Total;
+    if(Gate.IsNFT)
+    {
+        //комиссия всегда в Терах
+        var Fee=Order.NotaryFee+Order.TransferFee;
+        if(Fee)
+            Send(Order.AddrTera, COIN_FROM_FLOAT2(Fee), "Rufund");
+
+        Total=Round(Order.Amount);
+    }
+    else
+    {
+        Total=Order.Amount+Order.TransferFee+Order.NotaryFee;
+    }
+
     var TokenAcc=Gate.TokenAcc;
     if(!TokenAcc)
         TokenAcc=context.Smart.Account;
-    Move(TokenAcc,Order.AddrTera, COIN_FROM_FLOAT2(Total), "Refund");
+
+
+    MoveToken(Info,Gate, TokenAcc, Order.AddrTera, Order.TokenID, Total, "Refund");
+
+
+    //Move(TokenAcc,Order.AddrTera, COIN_FROM_FLOAT2(Total), "Refund");
     //--------------------------------------
 
 
@@ -587,14 +702,43 @@ function CancelOrder(Params)
 "public"
 function ExecOrder(Order)
 {
+    //Разбиваем обработку ордера на два шага (в две транзакции):
+    //1) Process==1 Проверки и запись оредра
+    //2) Process==2 Перевод средств (уже записанного и проверенного ордера)
+
+    //Проверяем что номер ордера уникальный, смотрим номер обработки
+
+    //
+    var Order2=ReadOrder(Order.ID);
+    if(!Order2)
+        return ExecOrder1(Order);
+
+    if(Order2.Process==1)
+        return ExecOrder2(Order2);
+
+    if(Order2.Process==2)
+        return;//done
+
+    //ошибки вызова
+
+    throw "The order has already been processed. Process="+Order2.Process;
+}
+
+
+
+function ExecOrder1(Order)
+{
+
     //1. проверка типа Amount
     //2. только ордера созданные в другом блокчейне (Blockchain.OrderEnum)
     //3. Проверяем параметры (дата входящего ордера еще не истекла)
-    //4. Проверяем что номер уникальный
     //5. Проверяем подписи
-    //6. Ставим признак что ордер выполнен (для защиты от дублей), записываем и добавляем в отдельный список
+    //6. Ставим признак что ордер выполнен1 (для защиты от дублей), записываем и добавляем в отдельный список
     //7. Перевод средств осуществляется в вызывающем смарт-контракте
 
+
+
+    CheckBaseCall();
 
     CheckSum(Order.Amount);
 
@@ -624,10 +768,6 @@ function ExecOrder(Order)
     if(Period<2 || Period>3)
         throw "Error order Period="+Period;
 
-    //4
-    var Order2=ReadOrder(Order.ID);
-    if(Order2)
-        throw "The order has already been processed. Process="+Order2.Process;
 
 
 
@@ -656,18 +796,54 @@ function ExecOrder(Order)
     Orders.WorkNum++;
     WriteConf(Info);
 
-    RunEvent("ExecOrder",Order);
+    RunEvent("ExecOrder1",Order);
+
+}
+
+
+function ExecOrder2(Order)
+{
+    //2. только ордера созданные в другом блокчейне (Blockchain.OrderEnum)
+    //6. Ставим признак что ордер выполнен2 (для защиты от дублей), записываем и добавляем в отдельный список
+
+    //читаем настройки текущего канала (гейта)
+    var Info=ReadConf();
+    if(!Info)
+        throw "Error ReadConf";
+
+    var Common=Info.Common;
+    var Orders=Info.Orders;
+    var Gate=Info.Gates[Order.Gate];
+    if(!Gate)
+        throw "Error Gate="+Order.Gate;
+    var Blockchain=Info.Blockchains[Gate.ChainName];
+    if(!Blockchain)
+        throw "Error ChainName="+Gate.ChainName;
+
+    //2
+    CheckOrderID(Order.ID,Blockchain.OrderEnum);//gate
+
 
     //--------------------------------------Token transfer
     var TokenAcc=Gate.TokenAcc;
     if(!TokenAcc)
         TokenAcc=context.Smart.Account;
-    Move(TokenAcc,Order.AddrTera, Order.Amount,"Transfer");
+
+
+    MoveToken(Info,Gate, TokenAcc, Order.AddrTera, Order.TokenID, Order.Amount, Order.Description);
+
     //--------------------------------------
 
+    //6
+    Order.Process=2;
+    WriteOrder(Order);
 
+
+    Orders.WorkNum++;
+    WriteConf(Info);
+
+    RunEvent("ExecOrder2",Order);
 }
-
 
 
 
@@ -767,6 +943,33 @@ function Withdraw(Params)
 }
 
 
+// --------------------------------------
+// DeFi Smart contract
+// --------------------------------------
+
+
+"public"
+function RunDeposit(Params)
+{
+    CheckOwnerPermission();
+
+    Params.cmd="Deposit";
+    Send(context.Smart.Account,Params.TestSum,Params);
+
+}
+"public"
+function RunWithdraw(Params)
+{
+    CheckOwnerPermission();
+
+    Params.cmd="Withdraw";
+    Send(context.Smart.Account,0,Params);
+
+}
+
+
+
+
 //----------------------------------------------------------------
 //-------------------------------------- задание параметров
 //----------------------------------------------------------------
@@ -822,31 +1025,6 @@ function ResetOrders(Params)
 
 
 
-//--------------------------------------
-//DeFi Smart contract
-//--------------------------------------
-
-
-"public"
-function RunDeposit(Params)
-{
-    CheckOwnerPermission();
-
-    Params.cmd="Deposit";
-    Send(context.Smart.Account,Params.TestSum,Params);
-
-}
-"public"
-function RunWithdraw(Params)
-{
-    CheckOwnerPermission();
-
-    Params.cmd="Withdraw";
-    Send(context.Smart.Account,0,Params);
-
-}
-
-
 
 
 
@@ -874,6 +1052,12 @@ function RemoveKey(Params)
 
 
 //Lib
+function CheckBaseCall()
+{
+    if(context.Account.Num!==context.Smart.Account)
+        throw "Error call Account = "+context.Account.Num+"/"+context.Smart.Account;
+}
+
 function CheckOwnerPermission()
 {
     if(context.FromNum!==context.Smart.Owner)
@@ -923,6 +1107,36 @@ function GetOrder(Params)
 
 
 "public"
+function GetOrderList(Params)
+{
+    var Arr=[];
+    var NextID=Params.ID;
+    var Count=0;
+    while(NextID)
+    {
+        Count++;
+        var Order=ReadOrder(NextID);
+        if(Order && Order.ID)
+        {
+            Arr.push(Order);
+            NextID=Order.NextID;
+        }
+        else
+        {
+            NextID=0;
+        }
+
+        if(Count>=Params.Count)
+        {
+            break;
+        }
+    }
+    return Arr;
+}
+
+
+
+"public"
 function GetKey(Params)
 {
     return ReadValue(Params.Key,Params.Format);
@@ -949,6 +1163,24 @@ function DoCheckSign(NumLib,Order,AddrNotary,ParamSign,bNoErr)
 }
 
 
+// function Round(Sum)
+// {
+//     return Math.floor(Sum*1e9)/1e9;
+// }
+function Round(Sum)
+{
+    return Math.floor(0.5+Sum*1e9)/1e9;
+}
+
+
+function COIN_FROM_FLOAT2(Sum)
+{
+    var MAX_SUM_CENT = 1e9;
+    var SumCOIN=Math.floor(Sum);
+    var SumCENT = Math.floor((Sum+0.0000000001) * MAX_SUM_CENT - SumCOIN * MAX_SUM_CENT);
+    var Coin={SumCOIN:SumCOIN,SumCENT:SumCENT};
+    return Coin;
+}
 
 //--------------------------------------------------------------------------- common smart-contract lib
 function HasSign(Order,Notary)
@@ -963,6 +1195,9 @@ function HasSign(Order,Notary)
 }
 function GetOrderBlockNum(Order)
 {
+    if(typeof Order.ID!=="number")
+        throw "GetOrderBlockNum Error Order.ID="+Order.ID;
+
     return Math.floor(Order.ID/100000);
 }
 
@@ -994,42 +1229,11 @@ function OrderInPeriod(Info,ID)
 
 }
 
-// function Round(Sum)
-// {
-//     return Math.floor(Sum*1e9)/1e9;
-// }
-function Round(Sum)
-{
-    return Math.floor(0.5+Sum*1e9)/1e9;
-}
-
-
-function COIN_FROM_FLOAT2(Sum)
-{
-    var MAX_SUM_CENT = 1e9;
-    var SumCOIN=Math.floor(Sum);
-    var SumCENT = Math.floor((Sum+0.0000000001) * MAX_SUM_CENT - SumCOIN * MAX_SUM_CENT);
-    var Coin={SumCOIN:SumCOIN,SumCENT:SumCENT};
-    return Coin;
-}
 
 
 
 
-//--------------------------------------
-//BRIDGE Smart contract
-//--------------------------------------
-
-
-
-
-
-
-
-
-
-
-//-------------------------------------- for test mode only INFO
+//-------------------------------------- for test mode only
 
 "public"
 function SetProxy(Params)
@@ -1048,107 +1252,5 @@ function GetProxy(Params)
 
 
 
-/*
-{
-    "EthSmartAddr": "",
-    "SignLib": 283,
-    "Common": {
-        "Pause": 0,
-        "SignPeriod": 14400,
-        "TransferPeriod": 28800,
-        "NotaryFee": 0.01,
-        "MinNotaryFee": 1,
-        "MinDeposit": 100000,
-        "NotaryArr": [
-            {
-                "Addr": "B13151395FD30AE79E6DB58E35C9BBA12FA8FF63",
-                "AccDeposit": 0,
-                "SumDeposit": 240035.37130000105,
-                "CanSign": 1,
-                "BlockFrom": 0,
-                "BlockTo": 0,
-                "Gates": [
-                    1,
-                    2,
-                    3
-                ]
-            }
-        ],
-        "MinSign": 1,
-        "SlashRate": 1,
-        "MinSlash": 1000
-    },
-    "Blockchains": {
-        "ETH": {
-            "EthNetworkId": 4,
-            "EthSmartAddr": "0xbc4d60aa28ab4e8f51c469917a7d2b5cba46c740",
-            "OrderEnum": 1,
-            "ChainName": "ETH"
-        },
-        "BSC": {
-            "EthNetworkId": 97,
-            "EthSmartAddr": "0xfc147368c05eb089f32e4c86ea946c1b8c1dcd5f",
-            "OrderEnum": 2,
-            "ChainName": "BSC"
-        }
-    },
-    "Gates": {
-        "1": {
-            "ID": 1,
-            "ChainName": "ETH",
-            "TokenId": 0,
-            "TokenName": "TERA",
-            "TokenAcc": 891,
-            "Rate": 1,
-            "Pause": 0
-        },
-        "2": {
-            "ID": 2,
-            "ChainName": "ETH",
-            "TokenId": 273,
-            "TokenName": "ETH",
-            "TokenAcc": 899,
-            "Rate": 0.000008,
-            "Pause": 0
-        },
-        "3": {
-            "ID": 3,
-            "ChainName": "ETH",
-            "TokenId": 10,
-            "TokenName": "USD",
-            "TokenAcc": 522,
-            "Rate": 0.03,
-            "Pause": 0
-        },
-        "2001": {
-            "ID": 2001,
-            "ChainName": "BSC",
-            "TokenId": 0,
-            "TokenName": "TERA",
-            "TokenAcc": 891,
-            "Rate": 1,
-            "Pause": 0
-        },
-        "2002": {
-            "ID": 2002,
-            "ChainName": "BSC",
-            "TokenId": 272,
-            "TokenName": "BSC",
-            "TokenAcc": 917,
-            "Rate": 0.00004,
-            "Pause": 0
-        }
-    },
-    "Orders": {
-        "HeadID": 852021801032,
-        "TailID": 849721501026,
-        "NewOrderID": 852008900000,
-        "WorkNum": 37
-    },
-    "cmd": "SetCommon"
-}
 
 
-https://api.methodfi.co/nft/1447059462716368615629220789805793325023438071129
-
- */
